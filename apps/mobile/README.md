@@ -34,7 +34,7 @@ flutter test
 flutter run
 ```
 
-`init-mobile.sh` က native platform files မရှိသေးရင် create လုပ်ပေးပြီး ရှိပြီးသား Dart source တွေကို ထိန်းထားပါတယ်။ နောက်တစ်ကြိမ် run တာက native defaults/configuration ကိုပဲ apply လုပ်ပါတယ်။
+Native Android/iOS project files နဲ့ `pubspec.lock` ကို repository ထဲ ထည့်ထားပါတယ်။ `init-mobile.sh` က native platform files မရှိသေးရင် create လုပ်ပေးပြီး ရှိပြီးသား Dart source တွေကို ထိန်းထားပါတယ်။ နောက်တစ်ကြိမ် run တာက native defaults/configuration ကိုပဲ apply လုပ်ပါတယ်။
 
 ## 3. Live API / Firebase ချိတ်မယ်
 

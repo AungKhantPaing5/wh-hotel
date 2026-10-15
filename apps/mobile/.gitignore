@@ -14,3 +14,6 @@ config/live*.json
 *.keystore
 *.p12
 config/build.json
+
+.idea/
+*.iml
