@@ -41,7 +41,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-dev-client",
       "expo-secure-store",
       "./plugins/withFirebaseStatic.cjs",
-      ["expo-build-properties", { ios: { useFrameworks: "static" } }],
+      ["expo-build-properties", { ios: { useFrameworks: "static", forceStaticLinking: ["RNFBApp", "RNFBAuth"] } }],
       ...(nativeFirebase
         ? ([
             "@react-native-firebase/app",

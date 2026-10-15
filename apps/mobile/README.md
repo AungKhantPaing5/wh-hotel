@@ -185,3 +185,7 @@ Official documentation:
 - https://github.com/invertase/react-native-apple-authentication
 - https://docs.expo.dev/build/building-on-ci/
 - https://docs.expo.dev/eas-update/runtime-versions/
+
+### Preview architecture
+
+GitHub preview APK က ARM64 Android devices အတွက် ဖြစ်ပါတယ်။ iOS simulator artifact က Apple Silicon (ARM64) Mac simulator အတွက် ဖြစ်ပါတယ်။ Store build profiles က သက်ဆိုင်ရာ EAS platform defaults ကိုသုံးပါတယ်။ iOS Firebase wrappers ကို `forceStaticLinking` ဖြင့် static libraries အဖြစ် link လုပ်ပြီး React non-modular header conflict ကိုရှောင်ထားပါတယ်။

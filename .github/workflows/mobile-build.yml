@@ -72,13 +72,13 @@ jobs:
       - name: Android standalone preview APK (test signing)
         if: matrix.platform == 'android'
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a
       - name: iOS simulator app (not installable on iPhone)
         if: matrix.platform == 'ios'
         run: >-
           xcodebuild -workspace ios/WHHotel.xcworkspace -scheme WHHotel
           -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
       - uses: actions/upload-artifact@v4
         if: matrix.platform == 'android'
         with:
