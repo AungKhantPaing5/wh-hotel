@@ -24,7 +24,7 @@ class _AccountPageState extends State<AccountPage> {
   void changed(){if(!mounted)return;setState((){profile=widget.session.user==null?null:widget.api.profile();});}
   Future<void> run(Future<void> Function() action,{String? success})async{
     if(busy)return;
-    setState(()=>{busy=true,message=null});
+    setState(() {busy=true;message=null;});
     try{await action();if(mounted)setState(()=>message=success);}
     catch(e){if(mounted)setState(()=>message=friendlyError(e));}
     finally{if(mounted)setState(()=>busy=false);}
@@ -32,9 +32,9 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> sendOtp()async{
     if(cooldown>0)return;
     await widget.session.sendPhone(phone.text.trim(),
-      codeSent:(){if(!mounted)return;setState(()=>{otpSent=true,busy=false,message='SMS code sent.'});},
-      verified:(){if(!mounted)return;setState(()=>{otpSent=false,busy=false,message='Phone verified.'});},
-      failed:(e){if(!mounted)return;setState(()=>{busy=false,message=friendlyError(e)});},
+      codeSent:(){if(!mounted)return;setState(() {otpSent=true;busy=false;message='SMS code sent.';});},
+      verified:(){if(!mounted)return;setState(() {otpSent=false;busy=false;message='Phone verified.';});},
+      failed:(e){if(!mounted)return;setState(() {busy=false;message=friendlyError(e);});},
     );
     if(!mounted)return;
     setState(()=>cooldown=60);

@@ -25,18 +25,18 @@ class _HomePageState extends State<HomePage> {
     final validation=stay.validate();
     if(search&&validation!=null){showError(context,validation);return;}
     final version=++requestVersion;
-    setState(()=>{loading=true,error=null});
+    setState(() {loading=true;error=null;});
     try {
       final result=AppConfig.preview?previewRooms():await widget.api.rooms(stay:search?stay:null);
       if(!mounted||version!=requestVersion)return;
-      setState(()=>{rooms=result,loading=false,searched=search});
-    } catch(e){if(mounted&&version==requestVersion)setState(()=>{loading=false,error=friendlyError(e)});}
+      setState(() {rooms=result;loading=false;searched=search;});
+    } catch(e){if(mounted&&version==requestVersion)setState(() {loading=false;error=friendlyError(e);});}
   }
   Future<void> pickDates() async {
     final today=hotelToday();
     final range=await showDateRangePicker(context:context,firstDate:today,lastDate:today.add(const Duration(days:730)),
       initialDateRange:DateTimeRange(start:stay.checkIn,end:stay.checkOut),helpText:'SELECT YOUR STAY',saveText:'Choose dates');
-    if(range!=null&&mounted){setState(()=>{stay=Stay(range.start,range.end,stay.guests),searched=false,rooms=[]});}
+    if(range!=null&&mounted){setState(() {stay=Stay(range.start,range.end,stay.guests);searched=false;rooms=[];});}
   }
   @override
   Widget build(BuildContext context)=>RefreshIndicator(onRefresh:()=>load(search:searched),child:ListView(padding:const EdgeInsets.all(20),children:[

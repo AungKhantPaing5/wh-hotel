@@ -64,6 +64,9 @@ jobs:
           if any('PRIVATE KEY' in str(v) for v in config.values()): raise SystemExit('Do not put private keys in a mobile app')
           Path('apps/mobile/config/build.json').write_text(json.dumps(config))
           PY
+      - name: Format source
+        working-directory: apps/mobile
+        run: dart format lib test
       - name: Analyze
         working-directory: apps/mobile
         run: flutter analyze --no-fatal-infos

@@ -24,7 +24,7 @@ class _BookingsPageState extends State<BookingsPage> with WidgetsBindingObserver
   Timer? timer;
   @override
   void initState(){super.initState();WidgetsBinding.instance.addObserver(this);widget.session.addListener(sessionChanged);timer=Timer.periodic(const Duration(seconds:30),(_){if(widget.active)load();});}
-  void sessionChanged(){version++;setState(()=>{rows=[],error=null,loading=false});if(widget.active)load();}
+  void sessionChanged(){version++;setState(() {rows=[];error=null;loading=false;});if(widget.active)load();}
   @override
   void didUpdateWidget(covariant BookingsPage old){super.didUpdateWidget(old);if(widget.active&&!old.active)load();}
   @override
@@ -32,7 +32,7 @@ class _BookingsPageState extends State<BookingsPage> with WidgetsBindingObserver
   Future<void> load() async {
     if(AppConfig.preview||widget.session.user==null||loading)return;
     final request=++version;
-    setState(()=>{loading=true,error=null});
+    setState(() {loading=true;error=null;});
     try {final data=await widget.api.bookings();if(mounted&&request==version)setState(()=>rows=data);}
     catch(e){if(mounted&&request==version)setState(()=>error=friendlyError(e));}
     finally{if(mounted&&request==version)setState(()=>loading=false);}

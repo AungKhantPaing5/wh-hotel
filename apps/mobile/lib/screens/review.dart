@@ -31,7 +31,7 @@ class _ReviewPageState extends State<ReviewPage> {
     if(uid==null){showError(context,'Please sign in first.');return;}
     final validation=widget.stay.validate();
     if(validation!=null){showError(context,validation);return;}
-    setState(()=>{submitting=true,error=null});
+    setState(() {submitting=true;error=null;});
     try {
       final profile=await widget.api.profile();
       if(profile['needsPhone']==true)throw const ApiException('Verify your phone in Account before requesting a booking.');
@@ -42,7 +42,11 @@ class _ReviewPageState extends State<ReviewPage> {
       requestKey ??= await prefs.getString(storageKey) ?? const Uuid().v4();
       await prefs.setString(storageKey,requestKey!);
       final booking=await widget.api.book(widget.room,widget.stay,requestKey!);
+      if(widget.session.user?.uid!=uid)throw const ApiException('Account changed. Sign in to the original account and check My bookings.');
       if(mounted)setState(()=>result=booking);
+      // A received success ends this intent. A new review can create a new
+      // request, including after an expired stay. Failed requests keep the key.
+      try { await prefs.remove(storageKey); } catch (_) { /* Keep safe retry behavior if local cleanup fails. */ }
     } catch(e){if(mounted)setState(()=>error=friendlyError(e));}
     finally{if(mounted)setState(()=>submitting=false);}
   }
@@ -59,6 +63,8 @@ class _ReviewPageState extends State<ReviewPage> {
       if(AppConfig.preview)const Notice('PREVIEW MODE · This stay cannot be submitted. Configure a live API and Firebase first.')
       else if(!signedIn)FilledButton.tonal(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Sign in')),body:AccountPage(api:widget.api,session:widget.session)))),child:const Text('Sign in to continue')),
       if(signedIn&&widget.session.user?.phoneNumber==null)const Notice('Your phone number must be verified. Open Account to add it.'),
+      if(signedIn&&(widget.session.user?.phoneNumber==null||widget.session.user?.emailVerified==false))
+        OutlinedButton(onPressed:submitting?null:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Complete profile')),body:AccountPage(api:widget.api,session:widget.session)))),child:const Text('Complete profile')),
       CheckboxListTile(contentPadding:EdgeInsets.zero,value:accepted,onChanged:submitting?null:(v)=>setState(()=>accepted=v??false),title:const Text('I understand this is a request and is subject to hotel approval.')),
       if(error!=null)Notice(error!),
       FilledButton(onPressed:AppConfig.preview||!signedIn||!accepted||submitting?null:submit,child:Text(submitting?'Sending request…':'Request booking')),
