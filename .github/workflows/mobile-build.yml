@@ -1,50 +1,105 @@
-name: WH Flutter starter build
+name: WH Mobile
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'scripts/init-mobile.sh'
+      - 'scripts/configure-mobile.py'
+      - '.github/workflows/mobile-build.yml'
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'scripts/*mobile*'
+      - '.github/workflows/mobile-build.yml'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: wh-mobile-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: android
             runner: ubuntu-latest
+            config_variable: MOBILE_ANDROID_CONFIG_JSON
           - platform: ios
             runner: macos-latest
+            config_variable: MOBILE_IOS_CONFIG_JSON
     runs-on: ${{ matrix.runner }}
+    env:
+      CI: "true"
+      FLUTTER_SUPPRESS_ANALYTICS: "true"
+      DART_SUPPRESS_ANALYTICS: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         if: matrix.platform == 'android'
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ vars.FLUTTER_VERSION }}
+          flutter-version: '3.41.7'
           channel: stable
           cache: true
-      - name: Require API URL and pinned SDK
+      - name: Prepare native projects
         env:
-          API_URL: ${{ vars.MOBILE_API_URL }}
-          SDK_VERSION: ${{ vars.FLUTTER_VERSION }}
-        run: test -n "$API_URL" && test -n "$SDK_VERSION"
-      - run: bash scripts/init-mobile.sh
-      - run: flutter analyze
+          GOOGLE_IOS_REVERSED_CLIENT_ID: ${{ vars.GOOGLE_IOS_REVERSED_CLIENT_ID }}
+        run: bash scripts/init-mobile.sh
+      - name: Resolve build configuration
+        env:
+          BUILD_CONFIG: ${{ vars[matrix.config_variable] }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          value = os.environ.get('BUILD_CONFIG', '').strip()
+          config = json.loads(value) if value else {}
+          if not isinstance(config, dict): raise SystemExit('Mobile config must be an object')
+          if any('PRIVATE KEY' in str(v) for v in config.values()): raise SystemExit('Do not put private keys in a mobile app')
+          Path('apps/mobile/config/build.json').write_text(json.dumps(config))
+          PY
+      - name: Analyze
         working-directory: apps/mobile
-      - name: Android development build
+        run: flutter analyze --no-fatal-infos
+      - name: Test
+        working-directory: apps/mobile
+        run: flutter test
+      - name: Android installable development APK
         if: matrix.platform == 'android'
         working-directory: apps/mobile
-        run: flutter build apk --debug --dart-define=API_BASE_URL=${{ vars.MOBILE_API_URL }}
+        run: flutter build apk --debug --build-number=${{ github.run_number }} --dart-define-from-file=config/build.json
       - name: iOS unsigned build
         if: matrix.platform == 'ios'
         working-directory: apps/mobile
-        run: flutter build ios --release --no-codesign --dart-define=API_BASE_URL=${{ vars.MOBILE_API_URL }}
-      - uses: actions/upload-artifact@v4
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }} --dart-define-from-file=config/build.json
+      - name: Upload Android APK
+        if: matrix.platform == 'android' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          name: wh-${{ matrix.platform }}-starter
-          path: |
-            apps/mobile/build/app/outputs/flutter-apk/*.apk
-            apps/mobile/build/ios/iphoneos/*.app
+          name: WH-Android-APK
+          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
+          retention-days: 30
+      - name: Upload unsigned iOS build
+        if: matrix.platform == 'ios' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: WH-iOS-unsigned
+          path: apps/mobile/build/ios/iphoneos/*.app
+          if-no-files-found: error
+          retention-days: 14
+      - name: Save native source and dependency lock
+        if: matrix.platform == 'android' && github.event_name != 'pull_request'
+        run: |
+          tar --exclude='apps/mobile/build' --exclude='apps/mobile/.dart_tool' --exclude='apps/mobile/android/.gradle' --exclude='apps/mobile/config/build.json' -czf wh-mobile-source.tar.gz apps/mobile
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'android' && github.event_name != 'pull_request'
+        with:
+          name: WH-mobile-source
+          path: wh-mobile-source.tar.gz

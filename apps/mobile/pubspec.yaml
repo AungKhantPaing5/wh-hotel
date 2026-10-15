@@ -1,0 +1,22 @@
+name: wh_mobile
+description: WH Hotel Android and iOS booking application.
+publish_to: none
+version: 0.2.0+2
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: 4.15.0
+  firebase_auth: 6.7.0
+  google_sign_in: 7.2.0
+  http: 1.6.0
+  intl: 0.20.2
+  shared_preferences: 2.5.6
+  uuid: 4.5.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

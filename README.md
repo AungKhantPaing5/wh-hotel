@@ -1,7 +1,7 @@
 # WH Hotel — starter v0.1
 
 WH ဟိုတယ်တစ်ခုတည်းအတွက် Next.js website + NestJS API + PostgreSQL starter ဖြစ်ပါတယ်။
-Flutter အတွက် room-list starter နဲ့ project-generation script ပါဝင်ပါတယ်။
+Flutter mobile app source ကို `apps/mobile` မှာ ထည့်ထားပါတယ်။ [Mobile setup guide](apps/mobile/README.md) ကို ဖတ်ပါ။
 
 **Production-ready booking/payment product မဟုတ်သေးပါ။** ပထမအဆင့်မှာ setup/run လုပ်ပြီး ဆက်တည်ဆောက်နိုင်ဖို့ ရည်ရွယ်ပါတယ်။
 
@@ -26,7 +26,7 @@ Flutter အတွက် room-list starter နဲ့ project-generation script �
 - Daily rates/tax/deposit/cancellation policies, multi-room booking
 - Full calendar UI, maintenance blocks, notifications
 - Email/password login UI, polished account collision/recovery flow
-- Full Flutter auth/booking/payment UI, signed mobile store releases
+- Live mobile payment integration and signed mobile store releases (Flutter room/auth/booking screens are implemented in v0.2)
 - Production abuse prevention, OTP limits, admin MFA, monitoring and recovery hardening
 
 Firebase key မဖြည့်ထားရင် room browsing/availability ရပါတယ်။ Login/booking/admin API က configuration error ပေးပြီး ပိတ်ထားပါတယ်။ Demo login bypass မရှိပါ။
@@ -157,7 +157,7 @@ Staff role UI မပါသေးပါ။ ADMIN_UIDS ထဲထည့်တာက
 | First-install sample rooms/rates | `apps/api/sql/001.sql` |
 | Payment integration interface | `apps/api/src/payment-provider.ts` |
 | Nginx domain/proxy | `/etc/nginx/sites-available/wh-hotel` |
-| Flutter room browser | `mobile-starter/main.dart` initially; then `apps/mobile/lib/main.dart` |
+| Flutter mobile app | `apps/mobile/lib/` |
 | CI / deployment | `.github/workflows/` |
 
 Migration 001 က first install တစ်ကြိမ်ပဲ run ပါတယ်။ Install ပြီးမှ 001.sql ကို edit လုပ်တာနဲ့ ရှိပြီးသား DB မပြောင်းပါ။ နောက် version အတွက် migration အသစ်ရေးပြီး migrate.mjs မှာ version register လုပ်ရပါမယ်။
@@ -227,36 +227,17 @@ sudo docker compose logs --tail=100 api web migrate
 sudo docker compose ps
 ```
 
-## 8. Flutter စတင် run နည်း
-
-Flutter SDK ရှိတဲ့ development စက်မှာ:
+## 8. Flutter app စတင် run နည်း
 
 ```bash
 bash scripts/init-mobile.sh
 cd apps/mobile
-flutter run --dart-define=API_BASE_URL=https://your-domain/api
+flutter run
 ```
 
-`API_BASE_URL` က `/api` နဲ့ဆုံးရပါမယ်။ Android emulator/phone မှ localhost သည် ကိုယ့် VPS ကို မဆိုလိုပါ။ Public HTTPS URL ကို သုံးပါ။
+ဒီ command က default Preview mode နဲ့ဖွင့်ပါတယ်။ Full mobile source မှာ rooms/date selection, Google/Apple/Phone/Email auth, profile verification, booking requests/history screens ပါဝင်ပါတယ်။ Live API/Firebase configuration ဖြည့်မှ real login/booking သုံးနိုင်ပါမယ်။ Payment မချိတ်ရသေးပါ။
 
-`flutter create` ပြီးရင် `apps/mobile/android/app/src/main/AndroidManifest.xml` ထဲ `<manifest>` ရဲ့ child အဖြစ် အောက်ပါ permission ရှိစေရပါမယ် (init script က ထည့်ပေးပါတယ်):
-
-```xml
-<uses-permission android:name="android.permission.INTERNET" />
-```
-
-ဒီ Flutter starter က room list ပဲပြပါတယ်။ Full login/booking/payment app မဟုတ်သေးပါ။ Native project files တွေကို init script က ထုတ်ပေးတာဖြစ်လို့ Flutter SDK မရှိတဲ့ container မှာ build မစစ်ရသေးပါ။
-
-GitHub Actions → WH Flutter starter build မှ Run workflow လုပ်ရန် Variables:
-
-```text
-FLUTTER_VERSION=your-tested-exact-sdk-version
-MOBILE_API_URL=https://your-domain/api
-```
-
-Android debug APK နဲ့ unsigned iOS .app artifact ထုတ်ပေးဖို့ configure လုပ်ထားပါတယ်။ Store upload မပါပါ။ iOS .app ကို iPhone မှာ တိုက်ရိုက် install မရပါ။ Signed IPA/TestFlight လိုပါတယ်။
-
-Website code push က Website ကို update လုပ်နိုင်ပေမယ့် Flutter native code ပြင်တာကို user ဖုန်းပေါ် ချက်ချင်းအစားမထိုးနိုင်ပါ။ Store signing/review/release လိုပါတယ်။ Room data ကိုတော့ API မှပြန်ဖတ်တဲ့အတွက် mobile rebuild မလိုပါ။
+အသေးစိတ် run/build/Firebase/iOS လမ်းညွှန်ကို [apps/mobile/README.md](apps/mobile/README.md) မှာကြည့်ပါ။ GitHub Actions → WH Mobile က Android testing APK နဲ့ unsigned iOS build ထုတ်ပေးပါတယ်။
 
 ## 9. Backup
 
@@ -296,5 +277,5 @@ Dependency audit (`npm audit --omit=dev`) က creation time မှာ vulnerabil
 2. Add admin room/photo/rate editor and staff RBAC.
 3. Implement audited payment sessions, verified webhooks, refunds and reconciliation.
 4. Add booking notifications and policies.
-5. Build Flutter authentication/booking/payment screens.
+5. Configure and device-test mobile authentication/booking; integrate payments.
 6. Add signed store releases, production security review and restore drills.

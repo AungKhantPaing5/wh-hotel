@@ -16,3 +16,6 @@ build/
 backups/
 .previous-release
 *.tsbuildinfo
+
+__pycache__/
+*.pyc
