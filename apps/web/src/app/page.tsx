@@ -115,17 +115,30 @@ export default function Home() {
     const currentUid = auth().currentUser?.uid;
     if (!currentUid) throw new Error("Sign in first.");
     const fingerprint = JSON.stringify([currentUid, body]);
-    if (request.current?.fingerprint !== fingerprint)
-      request.current = { fingerprint, key: crypto.randomUUID() };
+    const storageKey = `wh.booking.request.${currentUid}`;
+    if (request.current?.fingerprint !== fingerprint) {
+      const saved = sessionStorage.getItem(storageKey);
+      const prior = saved ? JSON.parse(saved) : null;
+      request.current = prior?.fingerprint === fingerprint && typeof prior.key === 'string'
+        ? prior : { fingerprint, key: crypto.randomUUID() };
+    }
+    const activeRequest = request.current;
+    if (!activeRequest) throw new Error('Review your booking request again.');
+    sessionStorage.setItem(storageKey, JSON.stringify(activeRequest));
     const result = await api(
       "bookings",
       {
         method: "POST",
-        headers: { "Idempotency-Key": request.current.key },
+        headers: { "Idempotency-Key": activeRequest.key },
         body: JSON.stringify(body),
       },
       true,
     );
+    if (['EXPIRED', 'REJECTED', 'CANCELLED'].includes(result.status)) {
+      sessionStorage.removeItem(storageKey);
+      request.current = null;
+      throw new Error('Your earlier request is closed. Search availability and submit again.');
+    }
     setMessage(
       `Request ${result.id} received. Status: ${result.status}. Admin approval is required; payment is not connected in this starter.`,
     );
