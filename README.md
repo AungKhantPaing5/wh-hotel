@@ -1,7 +1,7 @@
-# WH Hotel — starter v0.1
+# WH Hotel — web/API starter + Expo mobile v0.3
 
 WH ဟိုတယ်တစ်ခုတည်းအတွက် Next.js website + NestJS API + PostgreSQL starter ဖြစ်ပါတယ်။
-Flutter mobile app source ကို `apps/mobile` မှာ ထည့်ထားပါတယ်။ [Mobile setup guide](apps/mobile/README.md) ကို ဖတ်ပါ။
+React Native + Expo mobile app source ကို `apps/mobile` မှာ ထည့်ထားပါတယ်။ [Mobile setup guide](apps/mobile/README.md) ကို ဖတ်ပါ။
 
 **Production-ready booking/payment product မဟုတ်သေးပါ။** ပထမအဆင့်မှာ setup/run လုပ်ပြီး ဆက်တည်ဆောက်နိုင်ဖို့ ရည်ရွယ်ပါတယ်။
 
@@ -26,7 +26,7 @@ Flutter mobile app source ကို `apps/mobile` မှာ ထည့်ထာ�
 - Daily rates/tax/deposit/cancellation policies, multi-room booking
 - Full calendar UI, maintenance blocks, notifications
 - Email/password login UI, polished account collision/recovery flow
-- Live mobile payment integration and signed mobile store releases (Flutter room/auth/booking screens are implemented in v0.2)
+- Live mobile payment integration and signed mobile store releases (Expo room/auth/booking screens are implemented in v0.3; live device testing still required)
 - Production abuse prevention, OTP limits, admin MFA, monitoring and recovery hardening
 
 Firebase key မဖြည့်ထားရင် room browsing/availability ရပါတယ်။ Login/booking/admin API က configuration error ပေးပြီး ပိတ်ထားပါတယ်။ Demo login bypass မရှိပါ။
@@ -157,7 +157,7 @@ Staff role UI မပါသေးပါ။ ADMIN_UIDS ထဲထည့်တာက
 | First-install sample rooms/rates | `apps/api/sql/001.sql` |
 | Payment integration interface | `apps/api/src/payment-provider.ts` |
 | Nginx domain/proxy | `/etc/nginx/sites-available/wh-hotel` |
-| Flutter mobile app | `apps/mobile/lib/` |
+| React Native / Expo mobile app | `apps/mobile/App.tsx` |
 | CI / deployment | `.github/workflows/` |
 
 Migration 001 က first install တစ်ကြိမ်ပဲ run ပါတယ်။ Install ပြီးမှ 001.sql ကို edit လုပ်တာနဲ့ ရှိပြီးသား DB မပြောင်းပါ။ နောက် version အတွက် migration အသစ်ရေးပြီး migrate.mjs မှာ version register လုပ်ရပါမယ်။
@@ -227,17 +227,16 @@ sudo docker compose logs --tail=100 api web migrate
 sudo docker compose ps
 ```
 
-## 8. Flutter app စတင် run နည်း
+## 8. React Native + Expo app စတင် run နည်း
 
 ```bash
-bash scripts/init-mobile.sh
 cd apps/mobile
-flutter run
+npm ci
+cp .env.example .env
+npm start
 ```
 
-ဒီ command က default Preview mode နဲ့ဖွင့်ပါတယ်။ Full mobile source မှာ rooms/date selection, Google/Apple/Phone/Email auth, profile verification, booking requests/history screens ပါဝင်ပါတယ်။ Live API/Firebase configuration ဖြည့်မှ real login/booking သုံးနိုင်ပါမယ်။ Payment မချိတ်ရသေးပါ။
-
-အသေးစိတ် run/build/Firebase/iOS လမ်းညွှန်ကို [apps/mobile/README.md](apps/mobile/README.md) မှာကြည့်ပါ။ GitHub Actions → WH Mobile က Android testing APK နဲ့ unsigned iOS build ထုတ်ပေးပါတယ်။
+Default Preview mode မှ sample rooms ကို စမ်းနိုင်ပါတယ်။ Real authentication အတွက် native development build နဲ့ Firebase config လိုပါတယ်။ Mobile code / Android APK / iOS simulator / signed EAS build အတွက် [Mobile setup guide](apps/mobile/README.md) ကိုဖတ်ပါ။ Workflow: **WH Expo Mobile**။
 
 ## 9. Backup
 
@@ -258,7 +257,7 @@ npm test
 ```
 
 Local environment မှာ Next.js production build, NestJS TypeScript build, date validation tests pass ဖြစ်ပါတယ်။ PostgreSQL inventory integration test က DATABASE_URL မရှိရင် skip ပါတယ်။ CI က PostgreSQL service နဲ့ migration/inventory test ကို run ပါတယ်။
-Docker/Flutter runtimes မရှိတဲ့ creation environment ဖြစ်လို့ Docker end-to-end နဲ့ native app build ကို ဒီနေရာမှာ မစစ်ရသေးပါ။ Firebase real-provider login, SMS delivery နဲ့ live payments ကို မစမ်းရသေးပါ။
+Expo migration ကို TypeScript/tests/bundle export ဖြင့်စစ်ပြီး native build ကို GitHub Actions မှစစ်ပါတယ်။ Physical-device end-to-end testing လိုပါသေးတယ်။ Firebase real-provider login, SMS delivery နဲ့ live payments ကို မစမ်းရသေးပါ။
 
 Dependency audit (`npm audit --omit=dev`) က creation time မှာ vulnerabilities 0 ပြပါတယ်။ Root package.json မှာ transitive gRPC version ကို security fix ပါတဲ့ 1.14.6 နဲ့ pin လုပ်ထားပါတယ်။
 
@@ -267,7 +266,7 @@ Dependency audit (`npm audit --omit=dev`) က creation time မှာ vulnerabil
 - https://firebase.google.com/docs/auth/admin/verify-id-tokens
 - https://firebase.google.com/docs/auth/web/account-linking
 - https://www.postgresql.org/docs/current/rangetypes.html
-- https://docs.flutter.dev/deployment/cd
+- https://docs.expo.dev/build/building-on-ci/
 - https://docs.github.com/en/actions
 - https://docs.stripe.com/webhooks
 

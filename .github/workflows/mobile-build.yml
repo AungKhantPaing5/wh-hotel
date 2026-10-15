@@ -1,108 +1,98 @@
-name: WH Mobile
+name: WH Expo Mobile
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/mobile/**'
-      - 'scripts/init-mobile.sh'
-      - 'scripts/configure-mobile.py'
-      - '.github/workflows/mobile-build.yml'
+    paths: ['apps/mobile/**', '.github/workflows/mobile-build.yml']
   pull_request:
-    paths:
-      - 'apps/mobile/**'
-      - 'scripts/*mobile*'
-      - '.github/workflows/mobile-build.yml'
+    paths: ['apps/mobile/**', '.github/workflows/mobile-build.yml']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: wh-mobile-${{ github.ref }}
+  group: wh-expo-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  build:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_AUTH_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx expo install --check
+      - run: npm run export:android
+      - run: npm run export:ios
+  native-preview:
+    if: github.event_name != 'pull_request'
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: android
             runner: ubuntu-latest
-            config_variable: MOBILE_ANDROID_CONFIG_JSON
           - platform: ios
-            runner: macos-latest
-            config_variable: MOBILE_IOS_CONFIG_JSON
+            runner: macos-26
     runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: apps/mobile
     env:
-      CI: "true"
-      FLUTTER_SUPPRESS_ANALYTICS: "true"
-      DART_SUPPRESS_ANALYTICS: "true"
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_AUTH_ENABLED: 'false'
+      WH_FIREBASE_NATIVE: 'false'
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
       - uses: actions/setup-java@v4
         if: matrix.platform == 'android'
         with:
           distribution: temurin
           java-version: '17'
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.41.7'
-          channel: stable
-          cache: true
-      - name: Prepare native projects
-        env:
-          GOOGLE_IOS_REVERSED_CLIENT_ID: ${{ vars.GOOGLE_IOS_REVERSED_CLIENT_ID }}
-        run: bash scripts/init-mobile.sh
-      - name: Resolve build configuration
-        env:
-          BUILD_CONFIG: ${{ vars[matrix.config_variable] }}
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          value = os.environ.get('BUILD_CONFIG', '').strip()
-          config = json.loads(value) if value else {}
-          if not isinstance(config, dict): raise SystemExit('Mobile config must be an object')
-          if any('PRIVATE KEY' in str(v) for v in config.values()): raise SystemExit('Do not put private keys in a mobile app')
-          Path('apps/mobile/config/build.json').write_text(json.dumps(config))
-          PY
-      - name: Format source
-        working-directory: apps/mobile
-        run: dart format lib test
-      - name: Analyze
-        working-directory: apps/mobile
-        run: flutter analyze --no-fatal-infos
-      - name: Test
-        working-directory: apps/mobile
-        run: flutter test
-      - name: Android installable development APK
+      - run: npm ci
+      - run: npx expo prebuild --platform ${{ matrix.platform }} --clean
+      - name: Android standalone preview APK (test signing)
         if: matrix.platform == 'android'
-        working-directory: apps/mobile
-        run: flutter build apk --debug --build-number=${{ github.run_number }} --dart-define-from-file=config/build.json
-      - name: iOS unsigned build
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: iOS simulator app (not installable on iPhone)
         if: matrix.platform == 'ios'
-        working-directory: apps/mobile
-        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }} --dart-define-from-file=config/build.json
-      - name: Upload Android APK
-        if: matrix.platform == 'android' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        run: >-
+          xcodebuild -workspace ios/WHHotel.xcworkspace -scheme WHHotel
+          -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'android'
         with:
-          name: WH-Android-APK
-          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
-      - name: Upload unsigned iOS build
-        if: matrix.platform == 'ios' && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
-        with:
-          name: WH-iOS-unsigned
-          path: apps/mobile/build/ios/iphoneos/*.app
+          name: WH-Expo-Android-Preview-APK
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
-      - name: Save native source and dependency lock
-        if: matrix.platform == 'android' && github.event_name != 'pull_request'
-        run: |
-          tar --exclude='apps/mobile/build' --exclude='apps/mobile/.dart_tool' --exclude='apps/mobile/android/.gradle' --exclude='apps/mobile/config/build.json' -czf wh-mobile-source.tar.gz apps/mobile
+      - name: Preserve iOS app permissions
+        if: matrix.platform == 'ios'
+        run: tar -czf WH-iOS-Simulator.tar.gz -C build/Build/Products/Release-iphonesimulator WHHotel.app
       - uses: actions/upload-artifact@v4
-        if: matrix.platform == 'android' && github.event_name != 'pull_request'
+        if: matrix.platform == 'ios'
         with:
-          name: WH-mobile-source
-          path: wh-mobile-source.tar.gz
+          name: WH-Expo-iOS-Simulator
+          path: apps/mobile/WH-iOS-Simulator.tar.gz
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,18 @@
+node_modules/
+.expo/
+dist/
+android/
+ios/
+build/
+test/
+*.apk
+*.aab
+*.ipa
+# .env.local and Firebase client configuration are uploaded intentionally.
+# They contain public app configuration only; never put backend secrets here.
+
+.git/
+.env
+.env.*
+!.env.local
+!.env.example

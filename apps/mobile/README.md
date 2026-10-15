@@ -1,149 +1,187 @@
-# WH Mobile v0.2 — Android / iOS
+# WH Mobile v0.3 — React Native + Expo
 
-WH Hotel အတွက် Flutter app ဖြစ်ပါတယ်။ Website နဲ့ API/Firebase project တူတူသုံးပါတယ်။
+Flutter ကို React Native + Expo / TypeScript ဖြင့် အစားထိုးထားပါတယ်။ Next.js Website၊ NestJS API၊ PostgreSQL နဲ့ Firebase project ကို ဆက်သုံးပါတယ်။ Flutter source အဟောင်းကို Git history (`df8309237a5f08d2741624e182fb2873d74f92f8`) မှ ပြန်ယူနိုင်ပါတယ်။
 
-## ပါဝင်ပြီးသော screens
+## ပါဝင်သောအပိုင်း
 
-- Explore: အခန်းအမျိုးအစား၊ amenities၊ price၊ dates/guests ရွေးချယ်မှု
-- Availability search နှင့် sold-out/capacity handling
-- Room details နှင့် booking review
-- Google/Apple login၊ phone OTP signup/linking၊ email/password login/signup/reset
-- Profile: phone verification gate၊ email verification prompt၊ sign out
-- Booking request submission၊ server total၊ booking reference၊ status/history refresh
-- Network errors/retry၊ request idempotency key၊ preview/live mode ခွဲပြခြင်း
+- Explore, native date picker, guest count, availability, room review
+- Firebase native Google / Apple / Phone OTP / email-password login
+- Phone account → email/password link + email verification prompt
+- Email/social account → phone verification gate before booking
+- Booking submission, server totals, booking history/status, expiration display
+- Per-user/per-stay request keys in SecureStore, reused after uncertain responses
+- Preview/live distinction; server errors are not replaced with fake success/data
 
-Live payment gateway မချိတ်ရသေးပါ။ Payment pending screen က payment enabled ဖြစ်သလို မပြပါ။
+**ဒီ migration က production launch မဟုတ်ပါ။** Real Firebase/SMS/Apple flow ကို physical devices မှာ စမ်းရန်၊ payment/admin modules နဲ့ store releases ကို အပြီးသတ်ရန် လိုပါသေးတယ်။ Online payment buttons သို့မဟုတ် fake payment success မပါပါ။ Password reset က Firebase email link ဖြစ်ပြီး SMS-based account recovery မဟုတ်ပါ။
 
-## 1. APK ကို အရင်စမ်းမယ်
+## 1. Laptop / ဖုန်းပေါ် စမ်းရန်
 
-GitHub → Actions → WH Mobile → နောက်ဆုံး successful run → Artifacts → **WH-Android-APK** ကို download လုပ်ပါ။ ZIP ဖြည်ရင် `app-debug.apk` ရပါမယ်။ ဒါက developer-signed testing build ဖြစ်ပြီး Play Store production release မဟုတ်ပါ။ Android 7.0/API 24+ အတွက် build ထုတ်ပါတယ်။
-
-Firebase/API config မဖြည့်ထားရင် APK က **Preview mode** နဲ့ဖွင့်ပါတယ်။ Sample rooms၊ room details နဲ့ booking review ကို စမ်းနိုင်ပေမယ့် login/booking submit ကို ပိတ်ထားပါတယ်။ Server error ဖြစ်လို့ sample data ကို အလိုအလျောက်အစားထိုးပြတာ မရှိပါ။
-
-## 2. Source မှ run မယ်
-
-Flutter SDK **3.41.7**, Android Studio/SDK နဲ့ Java 17 တင်ထားပါ။ iOS အတွက် macOS + Xcode လိုပါတယ်။
+Node.js 22.13+ သို့မဟုတ် 24 LTS နဲ့ Git ထည့်ထားပါ။ Root server dependencies နဲ့ mobile dependencies ကို သီးခြားထိန်းထားပါတယ်။
 
 ```bash
 git clone https://github.com/AungKhantPaing5/wh-hotel.git
-cd wh-hotel
-bash scripts/init-mobile.sh
-cd apps/mobile
-flutter analyze
-flutter test
-flutter run
+cd wh-hotel/apps/mobile
+npm ci
+cp .env.example .env
+npm start
 ```
 
-Native Android/iOS project files နဲ့ `pubspec.lock` ကို repository ထဲ ထည့်ထားပါတယ်။ `init-mobile.sh` က native platform files မရှိသေးရင် create လုပ်ပေးပြီး ရှိပြီးသား Dart source တွေကို ထိန်းထားပါတယ်။ နောက်တစ်ကြိမ် run တာက native defaults/configuration ကိုပဲ apply လုပ်ပါတယ်။
-
-## 3. Live API / Firebase ချိတ်မယ်
-
-API ကို HTTPS ဖြင့် အရင် deploy လုပ်ထားရပါမယ်။
+ပထမစမ်းရန် `.env` မှာ empty API URL နဲ့ auth false ထားပါ။ Expo Go နဲ့ QR scan လုပ်ရင် **sample room UI** ကိုပဲ စမ်းနိုင်ပါတယ်။ Installed Expo Go က ဒီ project ရဲ့ SDK 55 ကို support လုပ်ရပါမယ်။ မကိုက်ရင် development build သုံးပါ။
 
 ```bash
-cd apps/mobile
-cp config/android.example.json config/live.android.json
+npm run typecheck
+npm test
 ```
 
-`config/live.android.json` ပြင်ပါ:
+API browsing အတွက် `.env`:
 
-```json
-{
-  "API_BASE_URL": "https://YOUR_DOMAIN/api",
-  "FIREBASE_API_KEY": "Firebase Android client API key",
-  "FIREBASE_APP_ID": "Firebase Android app ID",
-  "FIREBASE_PROJECT_ID": "same project as backend",
-  "FIREBASE_MESSAGING_SENDER_ID": "Firebase project number",
-  "GOOGLE_SERVER_CLIENT_ID": "Web OAuth client ID ending .apps.googleusercontent.com",
-  "GOOGLE_IOS_CLIENT_ID": ""
-}
+```dotenv
+EXPO_PUBLIC_API_URL=https://YOUR_DOMAIN/api
+EXPO_PUBLIC_AUTH_ENABLED=false
 ```
 
-ဒီ Firebase client config က app ထဲမှာပါမယ့် public configuration ဖြစ်ပါတယ်။ **Firebase Admin SDK JSON၊ service account/private key၊ payment secret ကို app/config ထဲ မထည့်ပါနှင့်။**
+Nginx → Next.js rewrite သုံးရင် `/api` ဖြစ်ပါတယ်။ NestJS ကို တိုက်ရိုက် expose လုပ်ထားရင် HTTPS origin + `/v1` သုံးပါ။ Config ပြောင်းပြီး Metro ကို restart လုပ်ပါ။
+
+## 2. Login ချိတ်ရန် — Expo Go မရပါ
+
+Native Firebase လိုတဲ့အတွက် **development build** လိုပါတယ်။ အောက်က public config files ကို Firebase project တူတူမှ download ယူပြီး `apps/mobile` ထဲထည့်ပါ။
+
+| Platform | Firebase app identity | Local file |
+|---|---|---|
+| Android | `com.whhotel.wh_mobile` | `google-services.json` |
+| iOS | `com.whhotel.whMobile` | `GoogleService-Info.plist` |
+
+```dotenv
+WH_FIREBASE_NATIVE=true
+EXPO_PUBLIC_AUTH_ENABLED=true
+EXPO_PUBLIC_API_URL=https://YOUR_DOMAIN/api
+EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
+GOOGLE_IOS_URL_SCHEME=com.googleusercontent.apps.YOUR_IOS_CLIENT_ID
+# Apple on Android: configure Apple Service ID + registered HTTPS redirect URI.
+EXPO_PUBLIC_APPLE_SERVICE_ID=YOUR_APPLE_SERVICE_ID
+EXPO_PUBLIC_APPLE_REDIRECT_URI=https://YOUR_REGISTERED_CALLBACK
+```
+
+Firebase Console မှ Google / Apple / Phone / Email-Password providers enable လုပ်ပါ။ Backend service account နဲ့ Firebase project ID ကိုလည်း တူညီစွာချိတ်ထားရပါမယ်။
+
+- Android signing SHA-1 / SHA-256 ကို Firebase မှာ register လုပ်ပြီး config ပြန် download ပါ။ Local debug၊ GitHub debug နဲ့ EAS release signing certificate မတူနိုင်ပါတယ်။
+- iOS: Apple Developer Team / Sign in with Apple capability၊ APNs key၊ phone auth reCAPTCHA setup စစ်ပါ။
+- Phone auth: Firebase test numbers အရင်သုံးပြီး SMS billing / region restrictions နဲ့ Myanmar delivery ကို physical device မှာစမ်းပါ။
+- User email/phone ရှိပြီးသား အခြား account နဲ့ collision ဖြစ်ရင် error ပြပါမယ်။ Account auto-merge မလုပ်ပါ။
+- Phone verification ပြီး account view မပြောင်းသေးရင် **Refresh verification status** ကိုနှိပ်ပါ။
+- Public mobile config ကိုသာ app ထဲထည့်ပါ။ Firebase Admin JSON / payment secret / private key လုံးဝမထည့်ပါနှင့်။
+
+Local native development:
 
 ```bash
-flutter run --dart-define-from-file=config/live.android.json
-flutter build apk --debug --dart-define-from-file=config/live.android.json
+# Android SDK / Java 17 လိုပါတယ်။
+npm run android
+# iOS: macOS + compatible Xcode + CocoaPods လိုပါတယ်။
+npm run ios
 ```
 
-API URL တစ်ခုပဲဖြည့်ထားရင် live room browsing ရပါတယ်။ Firebase config မပါရင် sign-in ပိတ်ထားပါတယ်။
+Native dependencies/config ပြောင်းရင် app ကို rebuild လုပ်ပါ။ Metro reload တစ်ခုတည်းနဲ့ မလုံလောက်ပါ။
 
-## 4. Firebase Console မှာ လုပ်ရန်
-
-1. Backend သုံးထားတဲ့ Firebase project ထဲ Android app register လုပ်ပါ။ Package: `com.whhotel.wh_mobile`။ Native project ရဲ့ applicationId ကို နောက်ဆုံးအတည်ပြုပါ။
-2. Google, Apple, Phone, Email/Password providers ကို enable လုပ်ပါ။
-3. Signing certificate SHA-1 နဲ့ SHA-256 ထည့်ပါ။ Local debug certificate နဲ့ GitHub runner debug certificate မတူနိုင်ပါတယ်။ Testing ကို fixed test keystore သို့မဟုတ် သတ်မှတ်ထားတဲ့ release signing key နဲ့လုပ်သင့်ပါတယ်။
-4. Google server client ID က **Web OAuth client ID** ဖြစ်ရပါမယ်။ Android client ID ကို serverClientId နေရာမှာ မသုံးပါနှင့်။
-5. Phone auth အတွက် test numbers အရင်ထည့်ပြီး SMS billing/region policy/Play Integrity/reCAPTCHA setup ကိုစစ်ပါ။ SMS delivery ကို Myanmar operator တွေနဲ့စမ်းရပါမယ်။
-6. Backend server မှာ Firebase Admin credential နဲ့ project ID ချိတ်ထားရပါမယ်။ App က verified ID token ကိုပဲ ပို့ပါတယ်။
-
-Google/Apple/Phone login source ပါဝင်ပေမယ့် ကိုယ့် Firebase/Apple project နဲ့ end-to-end စမ်းပြီးမှ production ဖွင့်ပါ။ Account collision ဖြစ်ရင် credential error ပြပြီး account တွေကို အလိုအလျောက် မပေါင်းပါ။
-
-## 5. iOS
-
-Native template bundle ID က `com.whhotel.whMobile` ဖြစ်ပါတယ်။ Xcode → Runner မှ bundle ID/Team ကို ကိုယ့် Apple account နဲ့ အတည်ပြုပါ။ မိမိပြင်ထားရင် `lib/main.dart` မှ FirebaseOptions.iosBundleId ကိုလည်း ပြင်ပါ။
-
-- Firebase မှ iOS app register လုပ်ပြီး iOS client API key/app ID ကို သီးခြား `config/live.ios.json` ထဲထည့်ပါ။
-- `GOOGLE_IOS_CLIENT_ID` ဖြည့်ပါ။
-- Reversed iOS client ID ကို URL scheme အဖြစ်ထည့်ရန်:
+## 3. Laptop အားနည်းရင် EAS cloud build
 
 ```bash
-GOOGLE_IOS_REVERSED_CLIENT_ID=com.googleusercontent.apps.YOUR_ID bash scripts/init-mobile.sh
+cd wh-hotel/apps/mobile
+npx eas-cli@16.28.0 login
+npx eas-cli@16.28.0 init
 ```
 
-- Xcode မှ **Sign in with Apple** capability ဖွင့်ပါ။
-- Phone auth အတွက် APNs key၊ Push Notifications၊ Background remote notifications နဲ့ reCAPTCHA URL scheme တို့ကို Firebase official setup အတိုင်းဖြည့်ပါ။
-- iOS deployment target 15.0 သတ်မှတ်ထားပါတယ်။
+ပေါ်လာတဲ့ project UUID ကို `.env` မှ `EAS_PROJECT_ID` နဲ့ GitHub Actions Variable `EAS_PROJECT_ID` ထဲထည့်ပါ။ Generated app config ကိုစစ်ပြီး Expo project identity ကို commit လုပ်ထားနိုင်ပါတယ်။
 
 ```bash
-cd apps/mobile
-flutter build ios --release --no-codesign --dart-define-from-file=config/live.ios.json
+# ပထမဆုံး interactive run နဲ့ signing credentials setup လုပ်ပါ။
+npx eas-cli@16.28.0 build --platform android --profile development
+# iPhone development အတွက် registered devices / provisioning လိုပါတယ်။
+npx eas-cli@16.28.0 device:create
+npx eas-cli@16.28.0 build --platform ios --profile development
+# ထုတ်ထားတဲ့ development app ကို install ပြီး Metro ချိတ်ရန်:
+npx expo start --dev-client
 ```
 
-CI မှထုတ်တဲ့ unsigned `.app` ကို iPhone မှာတိုက်ရိုက် install မရပါ။ Signed IPA/TestFlight/App Store အတွက် Apple Developer account၊ signing certificate/provisioning နဲ့ store metadata/review လိုပါတယ်။ Account deletion, privacy/support pages နဲ့ hotel policies တို့ကို public store launch မတိုင်မီ ထည့်ပြီး review လုပ်ပါ။
+EAS remote build အတွက် public env values တွေကို Expo project ရဲ့ environment မှာပါသတ်မှတ်ပါ။ Local `.env` ကို gitignore လုပ်ထားလို့ အလိုအလျောက် remote ပို့မယ်လို့ မယူဆပါနှင့်။ GitHub release workflow ကတော့ လိုအပ်တဲ့ public config ကို `.env.local` ထဲရေးပြီး upload လုပ်ပေးပါတယ်။ EAS plan/usage limits ကို Expo account မှာစစ်ပါ။
 
-## 6. GitHub push နဲ့ App build
+## 4. GitHub Actions CI/CD
 
-Source push/main ပြောင်းတာနဲ့ **WH Mobile** workflow က analyze/tests လုပ်ပြီး Android debug APK နဲ့ unsigned iOS build ထုတ်ပါတယ်။
+### Every push → verify + preview native builds
 
-GitHub → Settings → Secrets and variables → Actions → Variables မှ:
+`WH Expo Mobile`:
 
-- Android live config: `MOBILE_ANDROID_CONFIG_JSON` မှာ အပေါ်က public client JSON ထည့်နိုင်ပါတယ်။
-- iOS live config ကို `MOBILE_IOS_CONFIG_JSON` မှာ သီးခြားထည့်ပါ။ Android app ID ကို iOS build မှာ မသုံးပါနှင့်။
-- `GOOGLE_IOS_REVERSED_CLIENT_ID` က iOS OAuth public URL scheme ဖြစ်ပါတယ်။
+1. `npm ci`, TypeScript, domain/API tests, Expo dependency compatibility
+2. Android / iOS JavaScript bundle export
+3. Android standalone APK (test signing) (GitHub artifact: `WH-Expo-Android-Preview-APK`)
+4. iOS simulator app (artifact: `WH-Expo-iOS-Simulator`)
 
-မဖြည့်ထားရင် Preview APK ထွက်ပါတယ်။ `workflow_dispatch` နဲ့ manual build လည်းရပါတယ်။ Artifacts က APK 30 days၊ iOS 14 days အထိထားပါတယ်။
+ဒီ automatic preview build မှာ **auth ကိုပိတ်ထားပါတယ်**။ Variable `EXPO_PUBLIC_API_URL` ဖြည့်ရင် real rooms ကြည့်နိုင်ပါတယ်။ Google/Apple/SMS login အမှန်စမ်းဖို့ အောက်က configured EAS build ကိုသုံးပါ။ Testing signing ကို production update key လို့ မယူဆပါနှင့်။ preview APK အသစ်တင်ရာမှာ အဟောင်း uninstall လုပ်ဖို့ လိုနိုင်ပါတယ်။
 
-Production signed release pipeline မဖွင့်ထားပါ။ App code update ကို phone ပေါ်အလိုအလျောက်အစားထိုးဖို့ Store release လိုပြီး room/pricing data updates ကိုတော့ API မှတစ်ဆင့် ရနိုင်ပါတယ်။
+iOS Simulator app ကို iPhone မှာ install လုပ်လို့မရပါ။ Signed device build / TestFlight အတွက် Apple Developer credentials လိုပါတယ်။ Preview artifacts ကို 14 days ထားပါတယ်။
 
-## 7. ဘယ်ဖိုင်ပြင်မလဲ
+### Configured signed builds
 
-| ပြင်လိုသည့်အရာ | ဖိုင် |
+GitHub Settings → Secrets and variables → Actions:
+
+**Secrets**:
+- `EXPO_TOKEN` — Expo access token
+- `EXPO_ANDROID_GOOGLE_SERVICES_JSON` — Firebase Android client JSON content
+- `EXPO_IOS_GOOGLE_SERVICES_PLIST` — Firebase iOS client plist content
+
+**Variables**:
+- `EAS_PROJECT_ID`
+- `EXPO_PUBLIC_API_URL`
+- `WH_FIREBASE_NATIVE=true`, `EXPO_PUBLIC_AUTH_ENABLED=true`
+- `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_URL_SCHEME`
+- `EXPO_PUBLIC_APPLE_SERVICE_ID`, `EXPO_PUBLIC_APPLE_REDIRECT_URI`
+
+GitHub → Actions → **WH Expo Store Build** → Run workflow → platform/profile ရွေးပါ။ First interactive EAS build နဲ့ credentials setup အရင်ပြီးထားရပါမယ်။ Workflow က EAS build ပြီးတဲ့အထိစောင့်ပြီး build URL ပြပါတယ်။ Store ကို အလိုအလျောက် submit မလုပ်ပါ။
+
+```bash
+# Store binary build (live config + credentials first)
+npx eas-cli@16.28.0 build --platform all --profile production
+# Binary ကို စစ်ဆေးပြီးမှ respective store သို့ submit
+npx eas-cli@16.28.0 submit --platform android --profile production
+npx eas-cli@16.28.0 submit --platform ios --profile production
+```
+
+Play Console / App Store Connect metadata၊ privacy/account deletion pages၊ hotel policies နဲ့ review လိုပါသေးတယ်။
+
+### Update behavior
+
+- Room/price/availability: API refresh မှ ပြောင်းတယ်။ App rebuild မလိုပါ။
+- Website/backend: existing `WH Deploy` workflow ကိုဆက်သုံးတယ်။ VPS secrets/config လိုတယ်။
+- Mobile native code: new binary + store release လိုတယ်။
+- `expo-updates` + fingerprint runtime config ထည့်ထားတယ်။ OTA publishing ကို **မဖွင့်ထားသေးပါ**။ Compatible JS/assets updates ကို staged channel/device testing ပြီးမှ enable လုပ်ပါ။ GitHub push တစ်ခုတည်းနဲ့ phone တိုင်း ချက်ချင်း update မဖြစ်ပါ။
+
+## 5. ဘယ်ဖိုင်ပြင်မလဲ
+
+| အကြောင်းအရာ | File |
 |---|---|
-| App theme, navigation | `lib/main.dart` |
-| Branding colors / room illustrations | `lib/widgets.dart` |
-| Room list, dates, guests, details | `lib/screens/home.dart` |
-| Booking review / request | `lib/screens/review.dart` |
-| Booking history / payment status | `lib/screens/bookings.dart` |
-| Login / phone / email profile | `lib/screens/account.dart` |
-| Firebase account operations | `lib/auth.dart` |
-| API calls / token / errors | `lib/api.dart` |
-| Data models / dates / money | `lib/models.dart` |
-| Client configuration | `config/live.android.json` (gitignored) |
-| Build workflow | `../../.github/workflows/mobile-build.yml` |
+| UI / tabs / room search / booking / account | `App.tsx` |
+| Dates / money / models / sample data | `src/domain.ts` |
+| HTTPS API / Firebase token / errors | `src/api.ts` |
+| Preview auth switch | `src/auth.ts` |
+| Native Firebase / Google / Apple / OTP | `src/nativeFirebase.ts` |
+| App identity / native plugins | `app.config.ts` |
+| EAS build profiles | `eas.json` |
+| Public local environment | `.env` (not committed) |
+| CI and signed build pipeline | `../../.github/workflows/mobile-*.yml` |
 
-## Known limits
+## Known limits / physical-device checklist
 
-- Physical Android/iOS login and SMS tests require the owner's real Firebase/Apple configuration.
-- Requests hold inventory for 30 minutes pending approval; accepted requests expire in 10 minutes without payment, matching the current backend.
-- A saved retry key reduces duplicate submission risk. Always check My bookings after an uncertain request; local preferences are not a financial transaction log.
-- No photo upload, admin editing, refund, check-in/out or cancellation UI in this mobile version.
-- Room prices are base-rate estimates until the server creates the request; no hidden client-side payment success.
-- English UI in this version; Myanmar localization can be added separately.
+- Test Google/Apple/email/phone sign-in, phone linking, email verification, account collision and logout/login on both platforms.
+- Test Android auto-verification + iOS APNs/reCAPTCHA and SMS resend behavior. Provider configuration alone is not proof of SMS delivery.
+- Test booking request timeout/retry, user changes, sold-out race, approval/expiration against the deployed API.
+- No live payment session/webhook/refund integration; no fake confirmation.
+- No admin mobile editing, cancellation/check-in/out, photo uploads, localization or production push notifications.
+- Visual room illustrations are placeholders, not real hotel photos.
+- API tests mock HTTP; they do not prove a real reservation or a provider login succeeded.
 
-Official references:
-- https://firebase.google.com/docs/auth/flutter/federated-auth
-- https://firebase.google.com/docs/auth/flutter/phone-auth
-- https://firebase.google.com/docs/auth/flutter/account-linking
-- https://docs.flutter.dev/deployment/android
-- https://docs.flutter.dev/deployment/ios
+Official documentation:
+- https://docs.expo.dev/guides/using-firebase/
+- https://rnfirebase.io/auth/usage
+- https://rnfirebase.io/auth/phone-auth
+- https://github.com/invertase/react-native-apple-authentication
+- https://docs.expo.dev/build/building-on-ci/
+- https://docs.expo.dev/eas-update/runtime-versions/
