@@ -46,6 +46,7 @@ jobs:
           - platform: ios
             runner: macos-26
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: apps/mobile

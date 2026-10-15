@@ -1,0 +1,78 @@
+# Isolated disposable local testing only. No real SMS, social providers or money.
+name: wh-final-test
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: wh
+      POSTGRES_DB: wh_test
+      POSTGRES_PASSWORD: local-test-only-password
+    volumes: [wh_test_db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U wh -d wh_test']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  auth:
+    build:
+      context: .
+      dockerfile: infra/auth-emulator.Dockerfile
+    ports: ['${WH_TEST_BIND:-127.0.0.1}:9099:9099']
+    healthcheck:
+      test: [CMD, node, '-e', "fetch('http://127.0.0.1:9099').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  seed:
+    image: node:22-alpine
+    volumes: ['./scripts:/scripts:ro']
+    environment:
+      AUTH_EMULATOR_URL: http://auth:9099
+    command: [node, /scripts/seed-test-users.mjs]
+    depends_on:
+      auth: { condition: service_healthy }
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://wh:local-test-only-password@db:5432/wh_test
+    command: [npm, run, migrate, '--workspace=@wh/api']
+    depends_on:
+      db: { condition: service_healthy }
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      APP_ENV: local-test
+      DATABASE_URL: postgresql://wh:local-test-only-password@db:5432/wh_test
+      FIREBASE_PROJECT_ID: demo-wh-final
+      FIREBASE_AUTH_EMULATOR_HOST: auth:9099
+      ADMIN_UIDS: wh-test-admin
+      WEB_ORIGIN: http://localhost:3000
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      seed: { condition: service_completed_successfully }
+    healthcheck:
+      test: [CMD, node, '-e', "fetch('http://127.0.0.1:4000/v1/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_FIREBASE_API_KEY: demo-key
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: demo-wh-final.firebaseapp.com
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: demo-wh-final
+        NEXT_PUBLIC_FIREBASE_APP_ID: demo-wh-web
+        NEXT_PUBLIC_LOCAL_TEST: 'true'
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    ports: ['${WH_TEST_BIND:-127.0.0.1}:3000:3000']
+    depends_on:
+      api: { condition: service_healthy }
+volumes:
+  wh_test_db:

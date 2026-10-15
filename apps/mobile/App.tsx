@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -17,7 +18,7 @@ import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import { StatusBar } from "expo-status-bar";
 import { WhApi } from "./src/api";
-import { auth, type Identity } from "./src/auth";
+import { auth, localTestMode, type Identity } from "./src/auth";
 import {
   addDays,
   bookingFingerprint,
@@ -319,11 +320,13 @@ function Main() {
         >
           <View style={s.notice}>
             <Text style={s.noticeText}>
-              {!API_URL
-                ? "PREVIEW · Sample rooms only. Login and booking are disabled."
-                : !auth
-                  ? "LIVE ROOMS · Authentication is not configured."
-                  : "WH HOTEL · Secure booking requests"}
+              {localTestMode
+                ? "LOCAL TEST · No real SMS, social login or money. Use test email accounts."
+                : !API_URL
+                  ? "PREVIEW · Sample rooms only. Login and booking are disabled."
+                  : !auth
+                    ? "LIVE ROOMS · Authentication is not configured."
+                    : "WH HOTEL · Secure booking requests"}
             </Text>
           </View>
           {!!error && (
@@ -476,18 +479,30 @@ function Main() {
                   )}
                   {rooms.map((room) => (
                     <View key={room.id} style={s.card}>
-                      <View style={s.roomArt}>
-                        <Text style={s.roomArtText}>
-                          WH / {room.name.toUpperCase()}
-                        </Text>
-                        <View style={s.bed}>
-                          <View style={s.pillow} />
-                          <View style={s.pillow} />
+                      {room.photo_urls?.[0] ? (
+                        <Image
+                          accessibilityLabel={room.name}
+                          source={{ uri: room.photo_urls[0] }}
+                          style={{
+                            width: "100%",
+                            height: 180,
+                            borderRadius: 12,
+                          }}
+                        />
+                      ) : (
+                        <View style={s.roomArt}>
+                          <Text style={s.roomArtText}>
+                            WH / {room.name.toUpperCase()}
+                          </Text>
+                          <View style={s.bed}>
+                            <View style={s.pillow} />
+                            <View style={s.pillow} />
+                          </View>
+                          <Text style={s.artCaption}>
+                            Room illustration · photos coming soon
+                          </Text>
                         </View>
-                        <Text style={s.artCaption}>
-                          Room illustration · photos coming soon
-                        </Text>
-                      </View>
+                      )}
                       <Text style={s.heading}>{room.name}</Text>
                       <Text style={s.body}>{room.description}</Text>
                       <Text style={s.muted}>
@@ -574,6 +589,22 @@ function Main() {
                           {new Date(booking.expires_at).toLocaleString()}
                         </Text>
                       )}
+                      {localTestMode &&
+                        effectiveStatus(booking) === "AWAITING_PAYMENT" && (
+                          <Button
+                            title="Simulate payment — no money"
+                            disabled={busy}
+                            onPress={() =>
+                              void run(async () => {
+                                await api.request(
+                                  `local-test/bookings/${booking.id}/pay`,
+                                  { method: "POST", authenticated: true },
+                                );
+                                await loadBookings();
+                              })
+                            }
+                          />
+                        )}
                       {effectiveStatus(booking) === "AWAITING_PAYMENT" && (
                         <Text style={s.warning}>
                           The hotel accepted this request. Online payment is not

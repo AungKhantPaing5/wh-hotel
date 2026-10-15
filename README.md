@@ -3,6 +3,8 @@
 WH ဟိုတယ်တစ်ခုတည်းအတွက် Next.js website + NestJS API + PostgreSQL starter ဖြစ်ပါတယ်။
 React Native + Expo mobile app source ကို `apps/mobile` မှာ ထည့်ထားပါတယ်။ [Mobile setup guide](apps/mobile/README.md) ကို ဖတ်ပါ။
 
+**Account/domain မရှိသေးဘဲ စမ်းရန်: [Local final-test guide](docs/FINAL-TEST.md)**
+
 **Production-ready booking/payment product မဟုတ်သေးပါ။** ပထမအဆင့်မှာ setup/run လုပ်ပြီး ဆက်တည်ဆောက်နိုင်ဖို့ ရည်ရွယ်ပါတယ်။
 
 ## ပါဝင်ပြီးသောအပိုင်း
@@ -22,9 +24,9 @@ React Native + Expo mobile app source ကို `apps/mobile` မှာ ထည�
 
 - Live payment providers/webhooks/refunds: contract only, credentials မပါ
 - Payment confirmation: ဒီ version က CONFIRMED အဖြစ် ပြောင်းပေးမယ့် payment flow မပါ
-- Admin room/photo/rate editor, custom roles/staff account management
+- Photo file upload/storage and full staff account invitation/deletion (room/photo-URL/rate editor + permission management are implemented)
 - Daily rates/tax/deposit/cancellation policies, multi-room booking
-- Full calendar UI, maintenance blocks, notifications
+- Dated maintenance blocks, notifications and advanced calendar/PMS (14-day availability view + physical room offline toggle are implemented)
 - Email/password login UI, polished account collision/recovery flow
 - Live mobile payment integration and signed mobile store releases (Expo room/auth/booking screens are implemented in v0.3; live device testing still required)
 - Production abuse prevention, OTP limits, admin MFA, monitoring and recovery hardening

@@ -7,6 +7,7 @@ export interface Room {
   currency: string;
   amenities: string[];
   available_rooms?: number;
+  photo_urls?: string[];
 }
 export interface Stay {
   checkIn: string;

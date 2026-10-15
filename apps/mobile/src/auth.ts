@@ -18,8 +18,14 @@ export interface AuthAdapter {
   refresh(): Promise<void>;
   signOut(): Promise<void>;
 }
+export const localTestMode = process.env.EXPO_PUBLIC_LOCAL_TEST === "true";
 export const authEnabled = process.env.EXPO_PUBLIC_AUTH_ENABLED === "true";
-// Native Firebase must not initialize in Expo Go or unconfigured preview mode.
-export const auth: AuthAdapter | null = authEnabled
-  ? require("./nativeFirebase").nativeAuth
-  : null;
+if (localTestMode && authEnabled)
+  throw new Error(
+    "Local testing and live authentication cannot be enabled together.",
+  );
+export const auth: AuthAdapter | null = localTestMode
+  ? require("./localTest").localAuth
+  : authEnabled
+    ? require("./nativeFirebase").nativeAuth
+    : null;

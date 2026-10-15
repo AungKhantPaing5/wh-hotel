@@ -26,7 +26,16 @@ export default ({ config }: ConfigContext): ExpoConfig => {
               process.env.GOOGLE_SERVICES_PLIST || "./GoogleService-Info.plist",
           }
         : {}),
-      infoPlist: { ITSAppUsesNonExemptEncryption: false },
+      infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
+        ...(process.env.EXPO_PUBLIC_LOCAL_TEST === "true"
+          ? {
+              NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
+              NSLocalNetworkUsageDescription:
+                "Connect to your disposable WH local test server.",
+            }
+          : {}),
+      },
     },
     android: {
       package: "com.whhotel.wh_mobile",
@@ -41,7 +50,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-dev-client",
       "expo-secure-store",
       "./plugins/withFirebaseStatic.cjs",
-      ["expo-build-properties", { ios: { useFrameworks: "static", forceStaticLinking: ["RNFBApp", "RNFBAuth"] } }],
+      [
+        "expo-build-properties",
+        {
+          android: {
+            usesCleartextTraffic: process.env.EXPO_PUBLIC_LOCAL_TEST === "true",
+          },
+          ios: {
+            useFrameworks: "static",
+            forceStaticLinking: ["RNFBApp", "RNFBAuth"],
+          },
+        },
+      ],
       ...(nativeFirebase
         ? ([
             "@react-native-firebase/app",

@@ -42,7 +42,10 @@ export class WhApi {
       key?: string;
     } = {},
   ): Promise<T> {
-    const base = apiBase(this.base);
+    const base =
+      process.env.EXPO_PUBLIC_LOCAL_TEST === "true"
+        ? require("./localTest").localUrl(this.base)
+        : apiBase(this.base);
     const headers: Record<string, string> = { Accept: "application/json" };
     if (options.authenticated) {
       const token = await this.token();

@@ -1,0 +1,63 @@
+name: WH Local Acceptance
+on:
+  push:
+    branches: [main]
+    paths: ['apps/api/**', 'apps/web/**', 'scripts/*test*', 'compose.test.yml', 'compose.acceptance.yml', 'infra/firebase.json', 'infra/auth-emulator.Dockerfile', '.github/workflows/acceptance.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start disposable local stack
+        run: docker compose -f compose.test.yml up -d --build
+      - name: Real API, Auth Emulator and PostgreSQL acceptance tests
+        run: docker compose -f compose.test.yml -f compose.acceptance.yml run --rm acceptance
+      - name: Website smoke test
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/ > /tmp/wh-home.html; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/admin > /tmp/wh-admin.html
+          curl -fsS http://127.0.0.1:3000/developer > /tmp/wh-developer.html
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          if (!fs.readFileSync('/tmp/wh-home.html','utf8').includes('LOCAL TEST ONLY')) throw new Error('Test warning missing');
+          if (!fs.readFileSync('/tmp/wh-admin.html','utf8').includes('WH Hotel administration')) throw new Error('Admin missing');
+          JS
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: test-tools/package-lock.json
+      - name: Install browser test dependencies
+        run: npm ci --prefix test-tools
+      - name: Install Chromium
+        working-directory: test-tools
+        run: npx playwright install --with-deps chromium
+      - name: Customer and admin browser acceptance
+        working-directory: test-tools
+        run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WH-Browser-Acceptance-Report
+          path: |
+            test-tools/playwright-report
+            test-tools/test-results
+      - name: Stack logs
+        if: always()
+        run: docker compose -f compose.test.yml logs --no-color --tail=200 > wh-local-test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WH-Local-Acceptance-Logs
+          path: wh-local-test.log
+      - name: Remove disposable CI database
+        if: always()
+        run: docker compose -f compose.test.yml down -v

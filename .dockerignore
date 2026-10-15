@@ -8,3 +8,5 @@ secrets
 **/build
 
 apps/mobile
+
+test-tools

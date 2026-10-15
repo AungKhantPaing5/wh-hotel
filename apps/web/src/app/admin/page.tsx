@@ -1,16 +1,573 @@
-'use client';
-import { useState } from 'react';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { api, auth } from '../../lib/firebase';
-type Booking = { id:string; status:string; check_in:string; check_out:string; firebase_uid:string };
+"use client";
+import { useState } from "react";
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+import { api, auth } from "../../lib/firebase";
+type Booking = {
+  id: string;
+  status: string;
+  check_in: string;
+  check_out: string;
+  firebase_uid: string;
+  total_amount_minor: string;
+  currency: string;
+};
+type RoomType = {
+  id: number;
+  name: string;
+  description: string;
+  max_guests: number;
+  nightly_amount_minor: string;
+  amenities: string[];
+  photo_urls: string[];
+};
+type Physical = {
+  id: number;
+  number: string;
+  active: boolean;
+  room_type: string;
+};
+type Staff = { firebase_uid: string; permissions: string[] };
+type Payment = {
+  id: string;
+  booking_id: string;
+  amount_minor: string;
+  currency: string;
+  provider: string;
+  created_at: string;
+};
+const availablePermissions = [
+  "bookings.read",
+  "bookings.manage",
+  "rooms.manage",
+  "payments.read",
+];
+const localTest = process.env.NEXT_PUBLIC_LOCAL_TEST === "true";
+function RoomEditor({
+  room,
+  busy,
+  save,
+}: {
+  room: RoomType;
+  busy: boolean;
+  save: (body: unknown) => void;
+}) {
+  const [name, setName] = useState(room.name),
+    [description, setDescription] = useState(room.description);
+  const [price, setPrice] = useState(room.nightly_amount_minor),
+    [capacity, setCapacity] = useState(room.max_guests);
+  const [amenities, setAmenities] = useState(room.amenities.join(", ")),
+    [photos, setPhotos] = useState(room.photo_urls.join("\n"));
+  return (
+    <form
+      className="booking editor"
+      onSubmit={(e) => {
+        e.preventDefault();
+        save({
+          name,
+          description,
+          maxGuests: capacity,
+          nightlyAmountMinor: price,
+          amenities: amenities
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          photoUrls: photos
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        });
+      }}
+    >
+      <h3>{room.name}</h3>
+      <label>
+        Name
+        <input
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <label>
+        Description
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </label>
+      <label>
+        Price in minor units (85,000 MMK = 8500000)
+        <input
+          required
+          inputMode="numeric"
+          pattern="[0-9]+"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+        />
+      </label>
+      <label>
+        Max guests
+        <select
+          value={capacity}
+          onChange={(e) => setCapacity(Number(e.target.value))}
+        >
+          {[1, 2, 3, 4].map((n) => (
+            <option key={n}>{n}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Amenities, comma separated
+        <input
+          value={amenities}
+          onChange={(e) => setAmenities(e.target.value)}
+        />
+      </label>
+      <label>
+        Photo HTTPS URLs, one per line
+        <textarea value={photos} onChange={(e) => setPhotos(e.target.value)} />
+      </label>
+      <p>
+        Changes affect new bookings. Existing booking totals remain unchanged.
+        URLs require an existing image host.
+      </p>
+      <button disabled={busy}>Save room type</button>
+    </form>
+  );
+}
 export default function Admin() {
-  const [rows,setRows]=useState<Booking[]>([]);
-  const [message,setMessage]=useState('Sign in using a Firebase UID listed in ADMIN_UIDS.');
-  const [busy,setBusy]=useState(false);
-  async function run(fn:()=>Promise<void>) {
+  const [rows, setRows] = useState<Booking[]>([]),
+    [types, setTypes] = useState<RoomType[]>([]),
+    [rooms, setRooms] = useState<Physical[]>([]),
+    [staff, setStaff] = useState<Staff[]>([]),
+    [payments, setPayments] = useState<Payment[]>([]);
+  const [profile, setProfile] = useState<{
+    permissions: string[];
+    isOwner: boolean;
+  } | null>(null);
+  const [message, setMessage] = useState(
+      "Sign in with an authorized WH account.",
+    ),
+    [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(localTest ? "admin@wh.test" : ""),
+    [password, setPassword] = useState("");
+  const [staffUid, setStaffUid] = useState(""),
+    [selectedPermissions, setSelectedPermissions] = useState<string[]>([
+      "bookings.read",
+      "payments.read",
+    ]);
+  const [tab, setTab] = useState("Bookings"),
+    [calendarDate, setCalendarDate] = useState(""),
+    [calendar, setCalendar] = useState<
+      { date: string; rooms: { name: string; available_rooms: number }[] }[]
+    >([]);
+  async function run(fn: () => Promise<void>) {
+    if (busy) return;
     setBusy(true);
-    try { await fn(); setMessage('Updated.'); } catch(e) {setMessage((e as Error).message);} finally {setBusy(false);}
+    setMessage("");
+    try {
+      await fn();
+      setMessage("Updated.");
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
-  async function load(){setRows(await api('admin/bookings',{},true));}
-  return <><header><a className="brand" href="/">WH<span>ADMIN</span></a><a href="/">Customer website</a></header><main><h1>Booking requests</h1><p>Starter dashboard: review the latest 200 requests. Room editing and custom staff roles are planned.</p><div className="row"><button disabled={busy} onClick={()=>void run(async()=>{await signInWithPopup(auth(),new GoogleAuthProvider());await load();})}>Sign in with Google</button><button disabled={busy} onClick={()=>void run(load)}>Refresh</button></div><p role="status">{message}</p>{rows.map(b=><section className="booking" key={b.id}><strong>{b.status}</strong><p>{b.id}</p><p>{String(b.check_in).slice(0,10)} → {String(b.check_out).slice(0,10)}</p><small>Guest UID: {b.firebase_uid}</small>{b.status==='PENDING_APPROVAL'&&<div className="row">{['accept','reject'].map(action=><button disabled={busy} key={action} onClick={()=>void run(async()=>{await api(`admin/bookings/${b.id}`,{method:'PATCH',body:JSON.stringify({action})},true);await load();})}>{action}</button>)}</div>}</section>)}</main></>;
+  async function load() {
+    await auth().authStateReady();
+    const p = await api("me", {}, true);
+    setProfile(p);
+    setRows(
+      p.permissions.includes("bookings.read")
+        ? await api("admin/bookings", {}, true)
+        : [],
+    );
+    if (p.permissions.includes("rooms.manage")) {
+      setTypes(await api("admin/room-types", {}, true));
+      setRooms(await api("admin/rooms", {}, true));
+    } else {
+      setTypes([]);
+      setRooms([]);
+    }
+    setPayments(
+      p.permissions.includes("payments.read")
+        ? await api("admin/payments", {}, true)
+        : [],
+    );
+    setStaff(p.isOwner ? await api("admin/staff", {}, true) : []);
+  }
+  async function loadCalendar() {
+    const start = Date.parse(`${calendarDate}T00:00:00Z`);
+    if (!Number.isFinite(start)) throw new Error("Choose a starting date.");
+    setCalendar(
+      await Promise.all(
+        Array.from({ length: 14 }, async (_, i) => {
+          const date = new Date(start + i * 86400000)
+              .toISOString()
+              .slice(0, 10),
+            out = new Date(start + (i + 1) * 86400000)
+              .toISOString()
+              .slice(0, 10);
+          return {
+            date,
+            rooms: await api(`availability?checkIn=${date}&checkOut=${out}`),
+          };
+        }),
+      ),
+    );
+  }
+  return (
+    <>
+      <header>
+        <a className="brand" href="/">
+          WH<span>ADMIN</span>
+        </a>
+        <nav>
+          <a href="/">Customer website</a>
+          {profile?.isOwner && <a href="/developer">System status</a>}
+        </nav>
+      </header>
+      <main>
+        <h1>WH Hotel administration</h1>
+        {localTest && (
+          <div className="notice">
+            LOCAL TEST ONLY · Fake accounts, simulated payment, no real SMS or
+            money.
+          </div>
+        )}
+        <form
+          className="row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              await signInWithEmailAndPassword(auth(), email, password);
+              setPassword("");
+              await load();
+            });
+          }}
+        >
+          <input
+            aria-label="Admin email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            placeholder="Email"
+          />
+          <input
+            aria-label="Admin password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="Password"
+          />
+          <button disabled={busy}>Email sign in</button>
+        </form>
+        <div className="row">
+          <button
+            disabled={busy || localTest}
+            onClick={() =>
+              void run(async () => {
+                await signInWithPopup(auth(), new GoogleAuthProvider());
+                await load();
+              })
+            }
+          >
+            Google sign in
+          </button>
+          <button disabled={busy} onClick={() => void run(load)}>
+            Load / refresh dashboard
+          </button>
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await signOut(auth());
+                setProfile(null);
+                setRows([]);
+                setTypes([]);
+                setRooms([]);
+                setStaff([]);
+                setPayments([]);
+                setCalendar([]);
+              })
+            }
+          >
+            Sign out
+          </button>
+        </div>
+        <p role="status">{message}</p>
+        {profile && (
+          <>
+            <div className="row">
+              {[
+                "Bookings",
+                ...(profile.permissions.includes("rooms.manage")
+                  ? ["Rooms", "Calendar"]
+                  : []),
+                ...(profile.permissions.includes("payments.read")
+                  ? ["Payments"]
+                  : []),
+                ...(profile.isOwner ? ["Staff"] : []),
+              ].map((name) => (
+                <button
+                  className={tab === name ? "" : "secondary"}
+                  key={name}
+                  onClick={() => setTab(name)}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            {tab === "Bookings" && (
+              <section>
+                <h2>Booking requests</h2>
+                <p>Latest 200 records. Status is refreshed from the server.</p>
+                {rows.map((b) => (
+                  <div className="booking" key={b.id}>
+                    <strong>{b.status}</strong>
+                    <p>{b.id}</p>
+                    <p>
+                      {b.check_in.slice(0, 10)} → {b.check_out.slice(0, 10)} ·{" "}
+                      {(Number(b.total_amount_minor) / 100).toLocaleString()}{" "}
+                      {b.currency}
+                    </p>
+                    <small>Guest UID: {b.firebase_uid}</small>
+                    {b.status === "PENDING_APPROVAL" &&
+                      profile.permissions.includes("bookings.manage") && (
+                        <div className="row">
+                          {["accept", "reject"].map((action) => (
+                            <button
+                              disabled={busy}
+                              key={action}
+                              onClick={() =>
+                                void run(async () => {
+                                  await api(
+                                    `admin/bookings/${b.id}`,
+                                    {
+                                      method: "PATCH",
+                                      body: JSON.stringify({ action }),
+                                    },
+                                    true,
+                                  );
+                                  await load();
+                                })
+                              }
+                            >
+                              {action}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                  </div>
+                ))}
+              </section>
+            )}
+            {tab === "Rooms" &&
+              profile.permissions.includes("rooms.manage") && (
+                <section>
+                  <h2>Room types and rates</h2>
+                  <div className="grid">
+                    {types.map((room) => (
+                      <RoomEditor
+                        key={JSON.stringify(room)}
+                        room={room}
+                        busy={busy}
+                        save={(body) =>
+                          void run(async () => {
+                            await api(
+                              `admin/room-types/${room.id}`,
+                              { method: "PATCH", body: JSON.stringify(body) },
+                              true,
+                            );
+                            await load();
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                  <h2>Physical room inventory</h2>
+                  <p>
+                    Offline rooms cannot receive new requests. Existing
+                    reservations remain valid.
+                  </p>
+                  {rooms.map((room) => (
+                    <div className="booking row" key={room.id}>
+                      <strong>
+                        {room.number} · {room.room_type} ·{" "}
+                        {room.active ? "Available for sale" : "Offline"}
+                      </strong>
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await api(
+                              `admin/rooms/${room.id}`,
+                              {
+                                method: "PATCH",
+                                body: JSON.stringify({ active: !room.active }),
+                              },
+                              true,
+                            );
+                            await load();
+                          })
+                        }
+                      >
+                        {room.active ? "Take offline" : "Make available"}
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              )}
+            {tab === "Calendar" &&
+              profile.permissions.includes("rooms.manage") && (
+                <section>
+                  <h2>14-day availability calendar</h2>
+                  <div className="row">
+                    <input
+                      aria-label="Calendar start"
+                      type="date"
+                      value={calendarDate}
+                      onChange={(e) => setCalendarDate(e.target.value)}
+                    />
+                    <button
+                      disabled={busy}
+                      onClick={() => void run(loadCalendar)}
+                    >
+                      Load calendar
+                    </button>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Available rooms by category</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {calendar.map((day) => (
+                          <tr key={day.date}>
+                            <td>{day.date}</td>
+                            <td>
+                              {day.rooms
+                                .map((r) => `${r.name}: ${r.available_rooms}`)
+                                .join(" · ")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+            {tab === "Payments" &&
+              profile.permissions.includes("payments.read") && (
+                <section>
+                  <h2>Payment transactions</h2>
+                  <p>
+                    Only local-test simulated transactions are implemented. Live
+                    gateways are disabled.
+                  </p>
+                  {payments.map((p) => (
+                    <div key={p.id} className="booking">
+                      <strong>
+                        {p.provider} ·{" "}
+                        {(Number(p.amount_minor) / 100).toLocaleString()}{" "}
+                        {p.currency}
+                      </strong>
+                      <p>Booking: {p.booking_id}</p>
+                      <small>{new Date(p.created_at).toLocaleString()}</small>
+                    </div>
+                  ))}
+                </section>
+              )}
+            {tab === "Staff" && profile.isOwner && (
+              <section>
+                <h2>Staff permissions</h2>
+                <p>
+                  Use an existing Firebase user UID. Revoking permissions
+                  removes admin access, not the customer account.
+                </p>
+                <form
+                  className="editor booking"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void run(async () => {
+                      await api(
+                        "admin/staff",
+                        {
+                          method: "POST",
+                          body: JSON.stringify({
+                            uid: staffUid,
+                            permissions: selectedPermissions,
+                          }),
+                        },
+                        true,
+                      );
+                      await load();
+                    });
+                  }}
+                >
+                  <input
+                    aria-label="Staff UID"
+                    required
+                    value={staffUid}
+                    onChange={(e) => setStaffUid(e.target.value)}
+                    placeholder={
+                      localTest ? "wh-test-staff" : "Firebase user UID"
+                    }
+                  />
+                  {availablePermissions.map((p) => (
+                    <label key={p}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPermissions.includes(p)}
+                        onChange={(e) =>
+                          setSelectedPermissions(
+                            e.target.checked
+                              ? [...selectedPermissions, p]
+                              : selectedPermissions.filter((v) => v !== p),
+                          )
+                        }
+                      />
+                      {p}
+                    </label>
+                  ))}
+                  <button disabled={busy}>Save permissions</button>
+                </form>
+                {staff.map((member) => (
+                  <div className="booking" key={member.firebase_uid}>
+                    <strong>{member.firebase_uid}</strong>
+                    <p>{member.permissions.join(", ") || "No permissions"}</p>
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void run(async () => {
+                          await api(
+                            `admin/staff/${encodeURIComponent(member.firebase_uid)}`,
+                            { method: "DELETE" },
+                            true,
+                          );
+                          await load();
+                        })
+                      }
+                    >
+                      Revoke access
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
+          </>
+        )}
+      </main>
+    </>
+  );
 }

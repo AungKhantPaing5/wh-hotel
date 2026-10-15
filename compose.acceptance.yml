@@ -1,0 +1,15 @@
+services:
+  acceptance:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    working_dir: /app
+    volumes: ['./scripts:/app/scripts:ro']
+    environment:
+      APP_ENV: local-test
+      DATABASE_URL: postgresql://wh:local-test-only-password@db:5432/wh_test
+      AUTH_EMULATOR_URL: http://auth:9099
+      TEST_API_URL: http://api:4000/v1
+    command: [node, /app/scripts/acceptance-test.mjs]
+    depends_on:
+      api: { condition: service_healthy }
