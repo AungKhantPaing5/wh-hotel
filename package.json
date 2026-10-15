@@ -1,0 +1,20 @@
+{
+  "name": "wh-hotel",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspace=@wh/api",
+    "dev:web": "npm run dev --workspace=@wh/web",
+    "dev:api": "npm run dev --workspace=@wh/api"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.6"
+  }
+}

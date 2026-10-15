@@ -1,0 +1,50 @@
+name: WH Flutter starter build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - platform: android
+            runner: ubuntu-latest
+          - platform: ios
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ vars.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Require API URL and pinned SDK
+        env:
+          API_URL: ${{ vars.MOBILE_API_URL }}
+          SDK_VERSION: ${{ vars.FLUTTER_VERSION }}
+        run: test -n "$API_URL" && test -n "$SDK_VERSION"
+      - run: bash scripts/init-mobile.sh
+      - run: flutter analyze
+        working-directory: apps/mobile
+      - name: Android development build
+        if: matrix.platform == 'android'
+        working-directory: apps/mobile
+        run: flutter build apk --debug --dart-define=API_BASE_URL=${{ vars.MOBILE_API_URL }}
+      - name: iOS unsigned build
+        if: matrix.platform == 'ios'
+        working-directory: apps/mobile
+        run: flutter build ios --release --no-codesign --dart-define=API_BASE_URL=${{ vars.MOBILE_API_URL }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wh-${{ matrix.platform }}-starter
+          path: |
+            apps/mobile/build/app/outputs/flutter-apk/*.apk
+            apps/mobile/build/ios/iphoneos/*.app
+          if-no-files-found: error
