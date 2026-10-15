@@ -14,7 +14,7 @@ void main(){
     await tester.tap(find.text('Account').last);
     await tester.pumpAndSettle();
     expect(find.text('Your WH account'),findsOneWidget);
-    final button=tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Sign in'));
+    final button=tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Continue with Google'));
     expect(button.onPressed,isNull);
     await tester.pumpWidget(const SizedBox());session.dispose();api.close();
   });
