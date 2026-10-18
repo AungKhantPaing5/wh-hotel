@@ -1,4 +1,18 @@
+import { deflateSync } from 'node:zlib';
 import { test, expect } from '@playwright/test';
+
+function samplePng() {
+ const chunk=(name:string,data:Buffer)=>{
+   const type=Buffer.from(name),payload=Buffer.concat([type,data]);
+   let crc=0xffffffff;
+   for(const byte of payload){crc^=byte;for(let b=0;b<8;b++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+   const length=Buffer.alloc(4),checksum=Buffer.alloc(4);length.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
+   return Buffer.concat([length,payload,checksum]);
+ };
+ const header=Buffer.alloc(13);header.writeUInt32BE(1,0);header.writeUInt32BE(1,4);header[8]=8;header[9]=2;
+ return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',header),chunk('IDAT',deflateSync(Buffer.from([0,23,75,63]))),chunk('IEND',Buffer.alloc(0))]);
+}
+
 test('customer request → owner approval → simulated payment in separate browser sessions', async ({browser})=>{
  const customer=await browser.newContext(),owner=await browser.newContext();
  const page=await customer.newPage(),admin=await owner.newPage();
@@ -25,5 +39,16 @@ test('customer request → owner approval → simulated payment in separate brow
  await admin.getByRole('button',{name:'Load / refresh dashboard',exact:true}).click();
  await admin.getByRole('button',{name:'Payments',exact:true}).click();
  await expect(admin.getByText(/SIMULATED ·/)).toBeVisible();
+
+ await admin.getByRole('button',{name:'Rooms',exact:true}).click();
+ await admin.getByLabel('Upload room photo',{exact:true}).first().setInputFiles({name:'room.png',mimeType:'image/png',buffer:samplePng()});
+ const uploaded=admin.locator('img').first();
+ await expect(uploaded).toBeVisible();
+ await expect.poll(()=>uploaded.evaluate((image:HTMLImageElement)=>image.naturalWidth)).toBeGreaterThan(0);
+ await page.reload();
+ await expect(page.locator('.brand')).toContainText('WN');
+ const guestPhoto=page.getByAltText('Deluxe Double').first();
+ await expect(guestPhoto).toBeVisible();
+ await expect.poll(()=>guestPhoto.evaluate((image:HTMLImageElement)=>image.naturalWidth)).toBeGreaterThan(0);
  await customer.close();await owner.close();
 });
