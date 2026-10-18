@@ -77,23 +77,23 @@ jobs:
       - name: iOS simulator app (not installable on iPhone)
         if: matrix.platform == 'ios'
         run: >-
-          xcodebuild -workspace ios/WHHotel.xcworkspace -scheme WHHotel
+          xcodebuild -workspace ios/WNHotel.xcworkspace -scheme WNHotel
           -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
           -derivedDataPath build CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=YES build
       - uses: actions/upload-artifact@v4
         if: matrix.platform == 'android'
         with:
-          name: WH-Expo-Android-Preview-APK
+          name: WN-Expo-Android-Preview-APK
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
       - name: Preserve iOS app permissions
         if: matrix.platform == 'ios'
-        run: tar -czf WH-iOS-Simulator.tar.gz -C build/Build/Products/Release-iphonesimulator WHHotel.app
+        run: tar -czf WN-iOS-Simulator.tar.gz -C build/Build/Products/Release-iphonesimulator WNHotel.app
       - uses: actions/upload-artifact@v4
         if: matrix.platform == 'ios'
         with:
-          name: WH-Expo-iOS-Simulator
-          path: apps/mobile/WH-iOS-Simulator.tar.gz
+          name: WN-Expo-iOS-Simulator
+          path: apps/mobile/WN-iOS-Simulator.tar.gz
           if-no-files-found: error
           retention-days: 14
