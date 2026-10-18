@@ -2,7 +2,7 @@ name: WH Local Acceptance
 on:
   push:
     branches: [main]
-    paths: ['apps/api/**', 'apps/web/**', 'scripts/*test*', 'compose.test.yml', 'compose.acceptance.yml', 'infra/firebase.json', 'infra/auth-emulator.Dockerfile', '.github/workflows/acceptance.yml']
+    paths: ['apps/api/**', 'apps/web/**', 'test-tools/**', 'scripts/*test*', 'compose.test.yml', 'compose.acceptance.yml', 'infra/firebase.json', 'infra/auth-emulator.Dockerfile', '.github/workflows/acceptance.yml']
   pull_request:
   workflow_dispatch:
 permissions:
