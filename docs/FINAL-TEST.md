@@ -49,7 +49,7 @@ Staff က owner permission ပေးမထားသေးရင် dashboard acc
 4. Customer → My account ကို ပြန်ဖွင့်/Refresh profile လုပ်ပါ။ **Simulate payment — no money** နှိပ်ပါ။ `CONFIRMED` ဖြစ်ရမယ်။
 5. Admin → Payments → provider `SIMULATED` နဲ့ transaction တစ်ခုသာ ရှိရမယ်။ ဘယ်ကတ်/ဘဏ်ကမှ ငွေမဖြတ်ပါ။
 6. နောက် booking request တစ်ခုကို **reject** လုပ်ပြီး customer မှာ `REJECTED` ပြသတာစစ်ပါ။
-7. Rooms → price / amenities / HTTPS photo URL ပြင်ပါ။ Customer ကို reload လုပ်ရင် အသစ်ပြရမယ်။ ရှိပြီးသား booking total က မပြောင်းရပါ။
+7. Rooms → price / amenities ပြင်ပြီး Upload room photo မှ file ရွေးတင်ပါ။ Customer ကို reload လုပ်ရင် အသစ်ပြရမယ်။ ရှိပြီးသား booking total က မပြောင်းရပါ။
 8. Physical room ကို **Take offline** လုပ်ပါ။ Availability လျော့ရမယ်။ Existing reservation က မပျက်ရပါ။ ပြန် **Make available** လုပ်ပါ။
 9. Calendar → starting date ရွေးပြီး 14-day availability ကြည့်ပါ။
 10. Staff → UID `wh-test-staff` ထည့်၊ `bookings.read`, `payments.read` ရွေး၊ Save လုပ်ပါ။ Staff account က bookings/payments ကြည့်နိုင်ပြီး room editing / approval / permission changes မလုပ်နိုင်ရပါ။
@@ -124,7 +124,7 @@ Expo Go / development app မှ QR scan လုပ်ပါ။ `guest@wh.test` �
 
 - Android emulator က host PC ကို `10.0.2.2` ဖြင့်ချိတ်နိုင်ပါတယ်။ iOS simulator က Mac host ကို `127.0.0.1` သုံးနိုင်ပါတယ်။
 - WSL2 NAT / Windows firewall ကြောင့် phone မချိတ်နိုင်ရင် Windows host ရဲ့ Docker Desktop WSL integration နဲ့ private-network port reachability ကိုစစ်ပါ။ `http://PC_IP:3000/api/health/ready` ကို phone browser မှာဖွင့်ကြည့်ပါ။
-- GitHub preview APK ထဲ config က build-time value ဖြစ်ပါတယ်။ Download ပြီးမှ `.env` ပြင်တာနဲ့ APK မပြောင်းပါ။ Dynamic local testing အတွက် `npm start` + Expo Go/development build ကိုသုံးပါ။
+- လက်ရှိ GitHub preview APK မှာ private test server address ကို startup screen မှ ထည့်နိုင်ပါပြီ။ Vultr အတွက် အောက်ဆုံး WN update section ကိုလိုက်လုပ်ပါ။ Production Firebase credentials ကတော့ build-time config ဖြစ်ပါတယ်။
 - Native local build လိုရင် Android SDK ရှိတဲ့ PC မှ `npm run android`; iOS အတွက် Mac/Xcode မှ `npm run ios` သုံးပါ။ Local test HTTP policy/config ပြောင်းရင် prebuild/rebuild လိုပါတယ်။
 
 ပြီးရင် localhost-only ပြန်ထားရန်:
@@ -217,7 +217,7 @@ Remove-NetFirewallRule -DisplayName "WN private test tunnel"
 
 Do not enter `https://payapi.uk` on the private-emulator screen. The domain currently points to the separate production stack. Public-domain login requires real Firebase setup. The private test screen intentionally rejects public emulator addresses.
 
-For iPhone: the GitHub iOS artifact is for an Apple Silicon Mac simulator. Physical iPhone installation still requires a compatible Expo Go/development build or Apple signing; an Android APK cannot be installed on iPhone. The same API/auth fields are available when running this source on iOS.
+For iPhone: the GitHub iOS artifact is for an Apple Silicon Mac simulator. Physical iPhone installation requires a signed development build or TestFlight with Apple Developer membership. This project uses Expo SDK 55; the App Store Expo Go build does not support SDK 55. An Android APK cannot be installed on iPhone. See https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/ . The same API/auth fields are available when running this source on iOS.
 
 ### Photo backup
 
