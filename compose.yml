@@ -39,6 +39,7 @@ services:
       ADMIN_UIDS: ${ADMIN_UIDS:-}
     volumes:
       - ./secrets:/run/secrets:ro
+      - wh_photos:/app/uploads
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -67,3 +68,4 @@ services:
         condition: service_healthy
 volumes:
   wh_db:
+  wh_photos:

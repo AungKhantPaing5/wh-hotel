@@ -1,4 +1,4 @@
-name: WH Expo Mobile
+name: WN Expo Mobile
 on:
   push:
     branches: [main]

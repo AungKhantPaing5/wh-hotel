@@ -148,7 +148,7 @@ export default function Home() {
     <>
       <header>
         <a className="brand" href="/">
-          WH<span>HOTEL & STAYS</span>
+          WN<span>HOTEL & STAYS</span>
         </a>
         <nav>
           <a href="#rooms">Our rooms</a>
@@ -179,12 +179,12 @@ export default function Home() {
           </h1>
           <p>
             A welcoming space, thoughtful comforts, and time for what matters.
-            Discover your stay at WH.
+            Discover your stay at WN.
           </p>
           <a className="button light" href="#rooms">
             Find your room ↗
           </a>
-          <div className="hero-mark">WH</div>
+          <div className="hero-mark">WN</div>
         </section>
         <form
           className="search"
@@ -235,7 +235,7 @@ export default function Home() {
         </div>
         {account && (
           <section className="account">
-            <h2>Your WH account</h2>
+            <h2>Your WN account</h2>
             <p>Sign in, verify your phone, and manage your booking requests.</p>
             <div className="row">
               <button
@@ -438,7 +438,7 @@ export default function Home() {
                   />
                 ) : (
                   <div className={`room-art art-${i}`}>
-                    <span>WH COLLECTION</span>
+                    <span>WN COLLECTION</span>
                     <div className="bed" />
                     <b>{room.name}</b>
                   </div>
@@ -479,7 +479,7 @@ export default function Home() {
         </section>
       </main>
       <footer>
-        <strong>WH</strong>
+        <strong>WN</strong>
         <span>One hotel. A personal welcome.</span>
         <small>Starter version · Online payments are not enabled.</small>
       </footer>

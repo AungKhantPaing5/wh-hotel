@@ -1,3 +1,4 @@
+import { runtime, photoAddress } from "./src/runtime";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,7 +34,7 @@ import {
   type Stay,
 } from "./src/domain";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || "";
+const API_URL = runtime.apiUrl;
 type Tab = "Explore" | "My bookings" | "Account";
 function Button({
   title,
@@ -282,7 +283,7 @@ function Main() {
       <StatusBar style="dark" />
       <View style={s.header}>
         <View>
-          <Text style={s.brand}>WH</Text>
+          <Text style={s.brand}>WN</Text>
           <Text style={s.eyebrow}>YOUR STAY, SIMPLY BETTER</Text>
         </View>
         <Text style={s.version}>HOTEL · v0.3</Text>
@@ -326,7 +327,7 @@ function Main() {
                   ? "PREVIEW · Sample rooms only. Login and booking are disabled."
                   : !auth
                     ? "LIVE ROOMS · Authentication is not configured."
-                    : "WH HOTEL · Secure booking requests"}
+                    : "WN HOTEL · Secure booking requests"}
             </Text>
           </View>
           {!!error && (
@@ -340,7 +341,7 @@ function Main() {
           {tab === "Explore" && (
             <>
               <View style={s.hero}>
-                <Text style={s.kicker}>WELCOME TO WH</Text>
+                <Text style={s.kicker}>WELCOME TO WN</Text>
                 <Text style={s.title}>
                   {"A little escape.\nA memorable stay."}
                 </Text>
@@ -482,7 +483,7 @@ function Main() {
                       {room.photo_urls?.[0] ? (
                         <Image
                           accessibilityLabel={room.name}
-                          source={{ uri: room.photo_urls[0] }}
+                          source={{ uri: photoAddress(room.photo_urls[0]) }}
                           style={{
                             width: "100%",
                             height: 180,
@@ -492,7 +493,7 @@ function Main() {
                       ) : (
                         <View style={s.roomArt}>
                           <Text style={s.roomArtText}>
-                            WH / {room.name.toUpperCase()}
+                            WN / {room.name.toUpperCase()}
                           </Text>
                           <View style={s.bed}>
                             <View style={s.pillow} />
@@ -608,7 +609,7 @@ function Main() {
                       {effectiveStatus(booking) === "AWAITING_PAYMENT" && (
                         <Text style={s.warning}>
                           The hotel accepted this request. Online payment is not
-                          available in this version. Contact WH; do not assume
+                          available in this version. Contact WN; do not assume
                           the reservation is confirmed.
                         </Text>
                       )}
@@ -624,7 +625,7 @@ function Main() {
                 {user ? "Your account" : "Welcome back"}
               </Text>
               <Text style={s.muted}>
-                Use the same WH account on the website and app.
+                Use the same WN account on the website and app.
               </Text>
               {!auth ? (
                 <View style={s.card}>
@@ -640,7 +641,7 @@ function Main() {
                   {user ? (
                     <View style={s.card}>
                       <Text style={s.heading}>
-                        {user.email || user.phone || "WH Guest"}
+                        {user.email || user.phone || "WN Guest"}
                       </Text>
                       <Text style={s.body}>
                         Phone: {user.phone || "Not verified"}
@@ -847,7 +848,7 @@ function Main() {
           )}
           <Text style={s.footer}>
             {
-              "WH HOTEL · Booking MVP\nOnline payments and store releases are not enabled."
+              "WN HOTEL · Booking MVP\nOnline payments and store releases are not enabled."
             }
           </Text>
         </ScrollView>

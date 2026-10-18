@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import sharp from 'sharp';
 const authBase = process.env.AUTH_EMULATOR_URL || 'http://127.0.0.1:9099';
 const base = process.env.TEST_API_URL || 'http://127.0.0.1:4000/v1';
 if (process.env.APP_ENV !== 'local-test') throw new Error('Acceptance fixture writes require APP_ENV=local-test.');
@@ -57,6 +58,20 @@ try{
  await call(`admin/room-types/${original.id}`,owner,'PATCH',edit);
  assert.equal(String((await call('rooms')).find(r=>r.id===original.id).nightly_amount_minor),'9900000');
  console.log('PASS owner room editing and read-only staff permissions');
+ const image = await sharp({create:{width:16,height:16,channels:3,background:"#174b3f"}}).png().toBuffer();
+ await call(`admin/room-types/${original.id}/photos`,guest,'POST',{data:image.toString('base64')},undefined,403);
+ await call(`admin/room-types/${original.id}/photos`,staff,'POST',{data:image.toString('base64')},undefined,403);
+ await call(`admin/room-types/${original.id}/photos`,owner,'POST',{data:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64')},undefined,400);
+ const photo = await call(`admin/room-types/${original.id}/photos`,owner,'POST',{data:image.toString('base64')},undefined,201);
+ const duplicate = await call(`admin/room-types/${original.id}/photos`,owner,'POST',{data:image.toString('base64')},undefined,201);
+ assert.equal(photo.url,duplicate.url);
+ assert.match(photo.url,/^\/api\/photos\/[a-f0-9]{64}\.webp$/);
+ const publicPhoto=await fetch(`${base}/photos/${photo.url.split('/').pop()}`);
+ assert.equal(publicPhoto.status,200);assert.match(publicPhoto.headers.get('content-type'),/image\/webp/);
+ assert.equal((await call('rooms')).find(r=>r.id===original.id).photo_urls.length,1);
+ await call(`admin/room-types/${original.id}`,owner,'PATCH',{...edit,photoUrls:[photo.url]});
+ console.log('PASS room photo upload, format validation, authorization, deduplication and public serving');
+
  for(const room of physical)await call(`admin/rooms/${room.id}`,owner,'PATCH',{active:false});
  assert.equal((await call(`availability?checkIn=${today}&checkOut=${out}`)).find(r=>r.id===original.id).available_rooms,0);
  await call('bookings',guest,'POST',body,randomUUID(),409);

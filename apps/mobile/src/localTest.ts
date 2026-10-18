@@ -1,32 +1,8 @@
 // Disposable Auth Emulator adapter. It never connects to Google's live identity endpoints.
 import * as SecureStore from "expo-secure-store";
 import type { AuthAdapter, Identity } from "./auth";
-export function localUrl(value: string): string {
-  const url = new URL(value);
-  const host = url.hostname;
-  const privateHost =
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "10.0.2.2" ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host);
-  if (
-    url.protocol !== "http:" ||
-    !privateHost ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  )
-    throw new Error(
-      "Local testing requires an HTTP localhost/private-network URL.",
-    );
-  return value.replace(/\/+$/, "");
-}
-const base = localUrl(
-  process.env.EXPO_PUBLIC_TEST_AUTH_URL || "http://127.0.0.1:9099",
-);
+import { runtime, validateLocalUrl } from "./runtime";
+const base = validateLocalUrl(runtime.testAuthUrl);
 let idToken: string | null = null,
   refreshToken: string | null = null,
   expires = 0;

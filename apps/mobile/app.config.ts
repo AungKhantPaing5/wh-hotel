@@ -10,7 +10,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const projectId = process.env.EAS_PROJECT_ID;
   return {
     ...config,
-    name: "WH Hotel",
+    name: "WN Hotel",
     slug: "wh-hotel",
     version: "0.3.0",
     scheme: "whhotel",
@@ -28,11 +28,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : {}),
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
-        ...(process.env.EXPO_PUBLIC_LOCAL_TEST === "true"
+        ...((!nativeFirebase || process.env.EXPO_PUBLIC_LOCAL_TEST === "true")
           ? {
               NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
               NSLocalNetworkUsageDescription:
-                "Connect to your disposable WH local test server.",
+                "Connect to your disposable WN local test server.",
             }
           : {}),
       },
@@ -54,7 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-build-properties",
         {
           android: {
-            usesCleartextTraffic: process.env.EXPO_PUBLIC_LOCAL_TEST === "true",
+            usesCleartextTraffic: (!nativeFirebase || process.env.EXPO_PUBLIC_LOCAL_TEST === "true"),
           },
           ios: {
             useFrameworks: "static",

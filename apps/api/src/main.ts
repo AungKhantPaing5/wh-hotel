@@ -15,12 +15,19 @@ import {
   UnauthorizedException,
   ForbiddenException,
   NotFoundException,
+  StreamableFile,
+  Header,
 } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { applicationDefault, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { Pool } from "pg";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { mkdir, writeFile, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import sharp from "sharp";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { validateStay } from "./dates";
 
 if (
@@ -32,6 +39,8 @@ if (
     "Firebase emulator is allowed only in the isolated demo-wh-final local-test environment.",
   );
 }
+const photoDirectory = resolve(process.env.PHOTO_DIRECTORY || "/app/uploads");
+const managedPhoto = (url: unknown): url is string => typeof url === "string" && /^\/api\/photos\/[a-f0-9]{64}\.webp$/.test(url);
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 if (process.env.FIREBASE_PROJECT_ID) {
   initializeApp({
@@ -107,7 +116,7 @@ function stay(a: unknown, b: unknown) {
 @Controller("v1")
 class ApiController {
   @Get("health/live") live() {
-    return { status: "ok", hotel: "WH" };
+    return { status: "ok", hotel: "WN" };
   }
 
   @Get("health/ready") async ready() {
@@ -368,6 +377,7 @@ class ApiController {
       !Array.isArray(photoUrls) ||
       photoUrls.length > 8 ||
       photoUrls.some((url) => {
+        if (managedPhoto(url)) return false;
         try {
           const u = new URL(String(url));
           return (
@@ -416,6 +426,55 @@ class ApiController {
       client.release();
     }
   }
+
+  @Post("admin/room-types/:id/photos")
+  async uploadPhoto(@Headers("authorization") authorization: string, @Param("id") value: string, @Body() body: { data?: unknown }) {
+    const current = await admin(authorization, "rooms.manage");
+    const typeId = Number(value);
+    if (!Number.isSafeInteger(typeId) || typeId < 1 || typeof body.data !== "string" ||
+      body.data.length > 7_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.data)) {
+      throw new BadRequestException("Choose a JPEG, PNG or WebP image up to 5 MiB.");
+    }
+    const input = Buffer.from(body.data, "base64");
+    if (!input.length || input.length > 5 * 1024 * 1024 || input.toString("base64") !== body.data) throw new BadRequestException("Invalid or oversized image.");
+    let output: Buffer;
+    try {
+      const image = sharp(input, { limitInputPixels: 20_000_000, animated: false });
+      const metadata = await image.metadata();
+      if (!["jpeg", "png", "webp"].includes(metadata.format || "") || (metadata.pages || 1) > 1) throw new Error("Unsupported image");
+      output = await image.rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+    } catch { throw new BadRequestException("The file is not a supported image, is damaged, or exceeds 20 megapixels."); }
+    const filename = createHash("sha256").update(output).digest("hex") + ".webp";
+    const url = "/api/photos/" + filename;
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const room = (await client.query("SELECT photo_urls FROM room_types WHERE id=$1 FOR UPDATE", [typeId])).rows[0];
+      if (!room) throw new NotFoundException();
+      if (!room.photo_urls.includes(url) && room.photo_urls.length >= 8) throw new BadRequestException("A room type can have at most 8 photos.");
+      await mkdir(photoDirectory, { recursive: true });
+      // Content-addressed output is safe to share between room types and retries.
+      try { await writeFile(join(photoDirectory, filename), output, { flag: "wx", mode: 0o644 }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+      if (!room.photo_urls.includes(url)) await client.query("UPDATE room_types SET photo_urls=array_append(photo_urls,$2) WHERE id=$1", [typeId, url]);
+      await client.query("INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)", [current.uid, "room.photo.upload", JSON.stringify({ typeId, url })]);
+      await client.query("COMMIT");
+      return { url };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  @Get("photos/:filename")
+  @Header("X-Content-Type-Options", "nosniff")
+  @Header("Cache-Control", "public, max-age=31536000, immutable")
+  async photo(@Param("filename") filename: string) {
+    if (!/^[a-f0-9]{64}\.webp$/.test(filename)) throw new NotFoundException();
+    const path = join(photoDirectory, filename);
+    let info;
+    try { info = await stat(path); } catch { throw new NotFoundException(); }
+    return new StreamableFile(createReadStream(path), { type: "image/webp", disposition: "inline", length: info.size });
+  }
+
   @Get("admin/rooms") async physicalRooms(
     @Headers("authorization") authorization?: string,
   ) {
@@ -553,7 +612,7 @@ class ApiController {
   ) {
     await owner(authorization);
     return {
-      hotel: "WH",
+      hotel: "WN",
       authConfigured: !!process.env.FIREBASE_PROJECT_ID,
       localTest: process.env.APP_ENV === "local-test",
       livePayments: false,
@@ -640,7 +699,8 @@ class AppModule {}
 
 async function bootstrap() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  app.useBodyParser("json", { limit: "8mb" });
   app.enableCors({ origin: process.env.WEB_ORIGIN || "http://localhost:3000" });
   app.enableShutdownHooks();
   await app.listen(4000, "0.0.0.0");

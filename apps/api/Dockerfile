@@ -7,6 +7,7 @@ RUN npm ci
 COPY apps/api apps/api
 RUN npm run build --workspace=@wh/api
 ENV NODE_ENV=production
+RUN mkdir -p /app/uploads && chown node:node /app/uploads
 USER node
 EXPOSE 4000
 CMD ["npm","run","start","--workspace=@wh/api"]

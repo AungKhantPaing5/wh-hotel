@@ -1,4 +1,4 @@
-# WH — Local acceptance / final-test guide
+# WN — Local acceptance / final-test guide
 
 ဒီ guide က account/domain/VPS မရှိသေးဘဲ **disposable local environment** မှာ စမ်းရန်ဖြစ်ပါတယ်။ Production-ready launch၊ real bank test၊ real SMS / Google / Apple login test အဖြစ် မယူဆပါနှင့်။
 
@@ -91,7 +91,7 @@ Test coverage:
 - Booking rejection and staff access revocation
 - Concurrent booking race through HTTP + real PostgreSQL constraint
 
-Tests ပြီးရင် test guest bookings၊ changed room rates / physical availability နဲ့ staff permission fixture ကို cleanup/restore လုပ်ပါတယ်။ GitHub Actions **WH Local Acceptance** က disposable stack နဲ့ အလိုအလျောက် run ပေးပါတယ်။
+Tests ပြီးရင် test guest bookings၊ changed room rates / physical availability နဲ့ staff permission fixture ကို cleanup/restore လုပ်ပါတယ်။ GitHub Actions **WN Local Acceptance** က disposable stack နဲ့ အလိုအလျောက် run ပေးပါတယ်။
 
 ## 6. Android / iOS App ကို local backend နဲ့စမ်းရန်
 
@@ -164,4 +164,61 @@ Production `compose.yml down -v` ကို ဒီ commands နဲ့ မရေ�
 
 အခု `SIMULATED` transaction သည် bank payment integration မဟုတ်ပါ။ Website/mobile test flow အောင်တာနဲ့ production payment အောင်တယ်လို့ မသတ်မှတ်ပါနှင့်။
 
-Room photo **URLs** editing ပါပြီး file upload/storage pipeline မပါသေးပါ။ Staff permission management ပါပြီး production staff invitation/account deletion workflow မပါသေးပါ။ Refund/cancellation policies၊ notifications၊ advanced reports/accounting၊ full housekeeping/PMS၊ SMS-based account recovery နဲ့ monitoring/backup restore drills ကို ထပ်ပြီးအပြီးသတ်ရန်လိုပါတယ်။
+Room photo file upload (JPEG/PNG/WebP) နဲ့ persistent server storage ပါပြီးသားဖြစ်ပါတယ်။ Staff permission management ပါပြီး production staff invitation/account deletion workflow မပါသေးပါ။ Refund/cancellation policies၊ notifications၊ advanced reports/accounting၊ full housekeeping/PMS၊ SMS-based account recovery နဲ့ monitoring/backup restore drills ကို ထပ်ပြီးအပြီးသတ်ရန်လိုပါတယ်။
+
+
+## WN update: App testing on Vultr + photo uploads
+
+Repository path, Docker project names, Firebase identifiers and existing test emails stay unchanged so updates preserve existing data. Displayed hotel branding is WN.
+
+### Update the existing Vultr test stack on port 3001
+
+Run on the Vultr server:
+```bash
+cd /opt/wh-hotel
+git pull --ff-only
+docker compose -f compose.test.yml -f compose.test-port.yml up -d --build
+```
+Use your existing compose.test-port.yml override for 127.0.0.1:3001:3000. Do not run down -v: it deletes test bookings and uploaded photos.
+
+Admin → Rooms → Upload room photo → choose a JPEG/PNG/WebP file. Maximum 5 MiB / 20 megapixels, 8 photos per room category. Upload saves immediately. Save other edits before uploading. The server re-encodes to WebP, strips metadata and stores files in a Docker volume. Website/App read the same photo addresses. The photo list lets you remove an attachment after Save; shared/orphan files are retained on disk.
+
+### Test the Android App without rebuilding for each server address
+
+Download the newest Android preview APK from GitHub Actions → WN Expo Mobile (or WH Expo Mobile for older runs) → Artifacts. Extract the ZIP and install the APK on an ARM64 Android phone.
+
+1. Put your Windows PC and phone on the same **private Wi-Fi**.
+2. Open Windows PowerShell, and enter your real Vultr IPv4 when prompted:
+
+```powershell
+$wnVps = Read-Host "Enter your Vultr Public IPv4"
+ssh -N -g -L 0.0.0.0:3001:127.0.0.1:3001 -L 0.0.0.0:9099:127.0.0.1:9099 "root@$wnVps"
+```
+
+Close any earlier SSH tunnel using ports 3001/9099 before starting this command. Keep this window open. This exposes the forwarded test ports on your PC's private LAN, not the Vultr public interface. Use a trusted private network and allow these ports only from LocalSubnet in Windows Firewall.
+
+3. In another PowerShell window run `ipconfig`. Find the PC Wi-Fi IPv4, e.g. 192.168.1.50.
+4. On the phone, open the WN App. The first screen accepts:
+   - Hotel API URL: `http://192.168.1.50:3001/api`
+   - Test authentication URL: `http://192.168.1.50:9099`
+   Replace the example private IP with your PC's actual Wi-Fi IPv4.
+5. Tap **Connect private test server**. Account → email login as `guest@wh.test`, password `WhTestOnly2026!`.
+6. Book in the App. In the PC browser open `http://localhost:3001/admin`, approve as `admin@wh.test`. Refresh My bookings in the App and simulate payment.
+7. Admin-uploaded photos appear after refresh / search. The WN logo is displayed on both platforms.
+
+For Windows firewall trouble, run in an **Administrator PowerShell**:
+```powershell
+New-NetFirewallRule -DisplayName "WN private test tunnel" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3001,9099 -RemoteAddress LocalSubnet -Profile Private
+```
+Only use the rule on a trusted Private network. After testing, close the SSH tunnel and remove the rule:
+```powershell
+Remove-NetFirewallRule -DisplayName "WN private test tunnel"
+```
+
+Do not enter `https://payapi.uk` on the private-emulator screen. The domain currently points to the separate production stack. Public-domain login requires real Firebase setup. The private test screen intentionally rejects public emulator addresses.
+
+For iPhone: the GitHub iOS artifact is for an Apple Silicon Mac simulator. Physical iPhone installation still requires a compatible Expo Go/development build or Apple signing; an Android APK cannot be installed on iPhone. The same API/auth fields are available when running this source on iOS.
+
+### Photo backup
+
+Production photo volume: `wh-hotel_wh_photos`; local-test volume: `wh-final-test_wh_test_photos`. Back up the photo volume along with PostgreSQL. A DB dump alone does not contain the uploaded image files.

@@ -1,4 +1,4 @@
-# WH Mobile v0.3 — React Native + Expo
+# WN Mobile v0.3 — React Native + Expo
 
 Flutter ကို React Native + Expo / TypeScript ဖြင့် အစားထိုးထားပါတယ်။ Next.js Website၊ NestJS API၊ PostgreSQL နဲ့ Firebase project ကို ဆက်သုံးပါတယ်။ Flutter source အဟောင်းကို Git history (`df8309237a5f08d2741624e182fb2873d74f92f8`) မှ ပြန်ယူနိုင်ပါတယ်။
 
@@ -108,12 +108,12 @@ EAS remote build အတွက် public env values တွေကို Expo proje
 
 ### Every push → verify + preview native builds
 
-`WH Expo Mobile`:
+`WN Expo Mobile`:
 
 1. `npm ci`, TypeScript, domain/API tests, Expo dependency compatibility
 2. Android / iOS JavaScript bundle export
-3. Android standalone APK (test signing) (GitHub artifact: `WH-Expo-Android-Preview-APK`)
-4. iOS simulator app (artifact: `WH-Expo-iOS-Simulator`)
+3. Android standalone APK (test signing) (GitHub artifact: `WN-Expo-Android-Preview-APK`)
+4. iOS simulator app (artifact: `WN-Expo-iOS-Simulator`)
 
 ဒီ automatic preview build မှာ **auth ကိုပိတ်ထားပါတယ်**။ Variable `EXPO_PUBLIC_API_URL` ဖြည့်ရင် real rooms ကြည့်နိုင်ပါတယ်။ Google/Apple/SMS login အမှန်စမ်းဖို့ အောက်က configured EAS build ကိုသုံးပါ။ Testing signing ကို production update key လို့ မယူဆပါနှင့်။ preview APK အသစ်တင်ရာမှာ အဟောင်း uninstall လုပ်ဖို့ လိုနိုင်ပါတယ်။
 
@@ -135,7 +135,7 @@ GitHub Settings → Secrets and variables → Actions:
 - `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `GOOGLE_IOS_URL_SCHEME`
 - `EXPO_PUBLIC_APPLE_SERVICE_ID`, `EXPO_PUBLIC_APPLE_REDIRECT_URI`
 
-GitHub → Actions → **WH Expo Store Build** → Run workflow → platform/profile ရွေးပါ။ First interactive EAS build နဲ့ credentials setup အရင်ပြီးထားရပါမယ်။ Workflow က EAS build ပြီးတဲ့အထိစောင့်ပြီး build URL ပြပါတယ်။ Store ကို အလိုအလျောက် submit မလုပ်ပါ။
+GitHub → Actions → **WN Expo Store Build** → Run workflow → platform/profile ရွေးပါ။ First interactive EAS build နဲ့ credentials setup အရင်ပြီးထားရပါမယ်။ Workflow က EAS build ပြီးတဲ့အထိစောင့်ပြီး build URL ပြပါတယ်။ Store ကို အလိုအလျောက် submit မလုပ်ပါ။
 
 ```bash
 # Store binary build (live config + credentials first)
@@ -150,7 +150,7 @@ Play Console / App Store Connect metadata၊ privacy/account deletion pages၊ h
 ### Update behavior
 
 - Room/price/availability: API refresh မှ ပြောင်းတယ်။ App rebuild မလိုပါ။
-- Website/backend: existing `WH Deploy` workflow ကိုဆက်သုံးတယ်။ VPS secrets/config လိုတယ်။
+- Website/backend: existing `WN Deploy` workflow ကိုဆက်သုံးတယ်။ VPS secrets/config လိုတယ်။
 - Mobile native code: new binary + store release လိုတယ်။
 - `expo-updates` + fingerprint runtime config ထည့်ထားတယ်။ OTA publishing ကို **မဖွင့်ထားသေးပါ**။ Compatible JS/assets updates ကို staged channel/device testing ပြီးမှ enable လုပ်ပါ။ GitHub push တစ်ခုတည်းနဲ့ phone တိုင်း ချက်ချင်း update မဖြစ်ပါ။
 
@@ -189,3 +189,6 @@ Official documentation:
 ### Preview architecture
 
 GitHub preview APK က ARM64 Android devices အတွက် ဖြစ်ပါတယ်။ iOS simulator artifact က Apple Silicon (ARM64) Mac simulator အတွက် ဖြစ်ပါတယ်။ Store build profiles က သက်ဆိုင်ရာ EAS platform defaults ကိုသုံးပါတယ်။ iOS Firebase wrappers ကို `forceStaticLinking` ဖြင့် static libraries အဖြစ် link လုပ်ပြီး React non-modular header conflict ကိုရှောင်ထားပါတယ်။
+
+
+For runtime private-server testing in the preview APK and Vultr SSH forwarding, see [the updated final-test guide](../../docs/FINAL-TEST.md#wn-update-app-testing-on-vultr--photo-uploads). Native package IDs are preserved for compatibility; the display name is WN Hotel.

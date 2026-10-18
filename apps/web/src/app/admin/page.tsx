@@ -51,10 +51,12 @@ function RoomEditor({
   room,
   busy,
   save,
+  upload,
 }: {
   room: RoomType;
   busy: boolean;
   save: (body: unknown) => void;
+  upload: (file: File) => void;
 }) {
   const [name, setName] = useState(room.name),
     [description, setDescription] = useState(room.description);
@@ -127,13 +129,20 @@ function RoomEditor({
           onChange={(e) => setAmenities(e.target.value)}
         />
       </label>
-      <label>
-        Photo HTTPS URLs, one per line
-        <textarea value={photos} onChange={(e) => setPhotos(e.target.value)} />
+      <label>Upload room photo
+        <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || room.photo_urls.length >= 8}
+          onChange={event => { const file = event.target.files?.[0]; if (file) upload(file); event.target.value = ""; }} />
       </label>
+      <p>JPEG, PNG or WebP, up to 5 MiB and 20 megapixels. Maximum 8 photos. Upload saves immediately; save any other edits first.</p>
+      <div className="row">{room.photo_urls.map(url => <div key={url}><img src={url} alt={room.name} style={{width:120,height:90,objectFit:"cover",borderRadius:8}} />
+        <button type="button" className="secondary" disabled={busy} onClick={() => { const next=photos.split("\n").filter(p => p.trim() && p.trim() !== url); setPhotos(next.join("\n")); }}>Remove from selection</button>
+      </div>)}</div>
+      <details><summary>Advanced: photo addresses / selected photos</summary>
+        <textarea aria-label="Photo addresses" value={photos} onChange={(e) => setPhotos(e.target.value)} />
+      </details>
       <p>
         Changes affect new bookings. Existing booking totals remain unchanged.
-        URLs require an existing image host.
+        Uploaded images are stored on this hotel server. Removing a photo from selection takes effect after Save room type.
       </p>
       <button disabled={busy}>Save room type</button>
     </form>
@@ -150,7 +159,7 @@ export default function Admin() {
     isOwner: boolean;
   } | null>(null);
   const [message, setMessage] = useState(
-      "Sign in with an authorized WH account.",
+      "Sign in with an authorized WN account.",
     ),
     [busy, setBusy] = useState(false);
   const [email, setEmail] = useState(localTest ? "admin@wh.test" : ""),
@@ -225,7 +234,7 @@ export default function Admin() {
     <>
       <header>
         <a className="brand" href="/">
-          WH<span>ADMIN</span>
+          WN<span>ADMIN</span>
         </a>
         <nav>
           <a href="/">Customer website</a>
@@ -233,7 +242,7 @@ export default function Admin() {
         </nav>
       </header>
       <main>
-        <h1>WH Hotel administration</h1>
+        <h1>WN Hotel administration</h1>
         {localTest && (
           <div className="notice">
             LOCAL TEST ONLY · Fake accounts, simulated payment, no real SMS or
@@ -379,6 +388,17 @@ export default function Admin() {
                         key={JSON.stringify(room)}
                         room={room}
                         busy={busy}
+                        upload={file => void run(async () => {
+                          if (!["image/jpeg","image/png","image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image up to 5 MiB.");
+                          const data = await new Promise<string>((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onerror = () => reject(new Error("Cannot read this photo."));
+                            reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+                            reader.readAsDataURL(file);
+                          });
+                          await api(`admin/room-types/${room.id}/photos`, {method:"POST",body:JSON.stringify({data})}, true);
+                          await load();
+                        })}
                         save={(body) =>
                           void run(async () => {
                             await api(

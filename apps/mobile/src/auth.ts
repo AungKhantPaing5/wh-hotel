@@ -1,3 +1,4 @@
+import { runtime } from "./runtime";
 export interface Identity {
   uid: string;
   email: string | null;
@@ -18,7 +19,7 @@ export interface AuthAdapter {
   refresh(): Promise<void>;
   signOut(): Promise<void>;
 }
-export const localTestMode = process.env.EXPO_PUBLIC_LOCAL_TEST === "true";
+export const localTestMode = runtime.localTest;
 export const authEnabled = process.env.EXPO_PUBLIC_AUTH_ENABLED === "true";
 if (localTestMode && authEnabled)
   throw new Error(

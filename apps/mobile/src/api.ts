@@ -1,3 +1,4 @@
+import { runtime, validateLocalUrl } from "./runtime";
 import type { Booking, Room, Stay } from "./domain";
 export class ApiError extends Error {
   constructor(
@@ -43,8 +44,8 @@ export class WhApi {
     } = {},
   ): Promise<T> {
     const base =
-      process.env.EXPO_PUBLIC_LOCAL_TEST === "true"
-        ? require("./localTest").localUrl(this.base)
+      runtime.localTest
+        ? validateLocalUrl(this.base)
         : apiBase(this.base);
     const headers: Record<string, string> = { Accept: "application/json" };
     if (options.authenticated) {

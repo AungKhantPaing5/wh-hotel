@@ -41,6 +41,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
   api:
+    volumes: [wh_test_photos:/app/uploads]
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -76,3 +77,4 @@ services:
       api: { condition: service_healthy }
 volumes:
   wh_test_db:
+  wh_test_photos:

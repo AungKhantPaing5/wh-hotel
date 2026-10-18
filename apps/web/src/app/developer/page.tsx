@@ -8,7 +8,7 @@ export default function Developer() {
     <>
       <header>
         <a className="brand" href="/admin">
-          WH<span>SYSTEM STATUS</span>
+          WN<span>SYSTEM STATUS</span>
         </a>
       </header>
       <main>

@@ -28,7 +28,7 @@ jobs:
           node --input-type=module <<'JS'
           import fs from 'node:fs';
           if (!fs.readFileSync('/tmp/wh-home.html','utf8').includes('LOCAL TEST ONLY')) throw new Error('Test warning missing');
-          if (!fs.readFileSync('/tmp/wh-admin.html','utf8').includes('WH Hotel administration')) throw new Error('Admin missing');
+          if (!fs.readFileSync('/tmp/wh-admin.html','utf8').includes('WN Hotel administration')) throw new Error('Admin missing');
           JS
       - uses: actions/setup-node@v4
         with:

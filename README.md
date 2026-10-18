@@ -1,6 +1,6 @@
-# WH Hotel — web/API starter + Expo mobile v0.3
+# WN Hotel — web/API starter + Expo mobile v0.3
 
-WH ဟိုတယ်တစ်ခုတည်းအတွက် Next.js website + NestJS API + PostgreSQL starter ဖြစ်ပါတယ်။
+WN ဟိုတယ်တစ်ခုတည်းအတွက် Next.js website + NestJS API + PostgreSQL starter ဖြစ်ပါတယ်။
 React Native + Expo mobile app source ကို `apps/mobile` မှာ ထည့်ထားပါတယ်။ [Mobile setup guide](apps/mobile/README.md) ကို ဖတ်ပါ။
 
 **Account/domain မရှိသေးဘဲ စမ်းရန်: [Local final-test guide](docs/FINAL-TEST.md)**
@@ -24,7 +24,7 @@ React Native + Expo mobile app source ကို `apps/mobile` မှာ ထည�
 
 - Live payment providers/webhooks/refunds: contract only, credentials မပါ
 - Payment confirmation: ဒီ version က CONFIRMED အဖြစ် ပြောင်းပေးမယ့် payment flow မပါ
-- Photo file upload/storage and full staff account invitation/deletion (room/photo-URL/rate editor + permission management are implemented)
+- Full staff account invitation/deletion (room photo upload/rate editor + permission management are implemented)
 - Daily rates/tax/deposit/cancellation policies, multi-room booking
 - Dated maintenance blocks, notifications and advanced calendar/PMS (14-day availability view + physical room offline toggle are implemented)
 - Email/password login UI, polished account collision/recovery flow
@@ -190,7 +190,7 @@ Repository မရှိသေးရင် GitHub မှာ `wh-hotel` နာမ�
 git init
 git branch -M main
 git add .
-git commit -m "Add WH Hotel starter"
+git commit -m "Add WN Hotel starter"
 git remote add origin https://github.com/AungKhantPaing5/wh-hotel.git
 git push -u origin main
 ```
@@ -220,7 +220,7 @@ GitHub → Settings → Environments မှ `production` ဖန်တီးပ�
 AUTO_DEPLOY=true
 ```
 
-ပြီးရင် main push → WH CI pass → WH Deploy → VPS update ဖြစ်ပါမယ်။ VPS secrets မဖြည့်ရသေးရင် AUTO_DEPLOY ကို မဖွင့်ပါနှင့်။
+ပြီးရင် main push → WN CI pass → WN Deploy → VPS update ဖြစ်ပါမယ်။ VPS secrets မဖြည့်ရသေးရင် AUTO_DEPLOY ကို မဖွင့်ပါနှင့်။
 
 Deployment script မှာ health checks ပါပေမယ့် automatic rollback မပါပါ။ ယခင် SHA ကို `.previous-release` မှာ သိမ်းပါတယ်။ Schema change နဲ့ ကိုက်ညီမှုစစ်ပြီးမှ previous version ပြန်တင်ပါ။ DB rollback ကို git checkout နဲ့ မလုပ်နိုင်ပါ။
 
@@ -238,7 +238,7 @@ cp .env.example .env
 npm start
 ```
 
-Default Preview mode မှ sample rooms ကို စမ်းနိုင်ပါတယ်။ Real authentication အတွက် native development build နဲ့ Firebase config လိုပါတယ်။ Mobile code / Android APK / iOS simulator / signed EAS build အတွက် [Mobile setup guide](apps/mobile/README.md) ကိုဖတ်ပါ။ Workflow: **WH Expo Mobile**။
+Default Preview mode မှ sample rooms ကို စမ်းနိုင်ပါတယ်။ Real authentication အတွက် native development build နဲ့ Firebase config လိုပါတယ်။ Mobile code / Android APK / iOS simulator / signed EAS build အတွက် [Mobile setup guide](apps/mobile/README.md) ကိုဖတ်ပါ။ Workflow: **WN Expo Mobile**။
 
 ## 9. Backup
 
