@@ -1,12 +1,11 @@
 "use client";
-import { useState } from "react";
+import Link from "next/link";
+import { useRef, useState } from "react";
 import {
-  GoogleAuthProvider,
-  signInWithPopup,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-import { api, auth } from "../../lib/firebase";
+import { api, auth } from "../../lib/admin-firebase";
 type Booking = {
   id: string;
   status: string;
@@ -149,6 +148,7 @@ function RoomEditor({
   );
 }
 export default function Admin() {
+  const signedInHere = useRef(false);
   const [rows, setRows] = useState<Booking[]>([]),
     [types, setTypes] = useState<RoomType[]>([]),
     [rooms, setRooms] = useState<Physical[]>([]),
@@ -162,7 +162,7 @@ export default function Admin() {
       "Sign in with an authorized WN account.",
     ),
     [busy, setBusy] = useState(false);
-  const [email, setEmail] = useState(localTest ? "admin@wh.test" : ""),
+  const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
   const [staffUid, setStaffUid] = useState(""),
     [selectedPermissions, setSelectedPermissions] = useState<string[]>([
@@ -188,8 +188,15 @@ export default function Admin() {
     }
   }
   async function load() {
+    if (!signedInHere.current) throw new Error("Enter your admin email and password first.");
     await auth().authStateReady();
     const p = await api("me", {}, true);
+    if (!p.isOwner && !availablePermissions.some(permission => p.permissions.includes(permission))) {
+      signedInHere.current = false;
+      setProfile(null);
+      await signOut(auth());
+      throw new Error("This account does not have administration access.");
+    }
     setProfile(p);
     setRows(
       p.permissions.includes("bookings.read")
@@ -238,7 +245,7 @@ export default function Admin() {
         </a>
         <nav>
           <a href="/">Customer website</a>
-          {profile?.isOwner && <a href="/developer">System status</a>}
+          {profile?.isOwner && <Link href="/developer">System status</Link>}
         </nav>
       </header>
       <main>
@@ -249,14 +256,24 @@ export default function Admin() {
             money.
           </div>
         )}
-        <form
+        {!profile && <form
           className="row"
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              await signInWithEmailAndPassword(auth(), email, password);
-              setPassword("");
-              await load();
+              signedInHere.current = false;
+              try {
+                await signInWithEmailAndPassword(auth(), email.trim(), password);
+                signedInHere.current = true;
+                await load();
+              } catch (error) {
+                signedInHere.current = false;
+                setProfile(null);
+                await signOut(auth());
+                throw error;
+              } finally {
+                setPassword("");
+              }
             });
           }}
         >
@@ -266,7 +283,8 @@ export default function Admin() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            placeholder="Email"
+            placeholder="Admin email"
+            autoComplete="username"
           />
           <input
             aria-label="Admin password"
@@ -275,21 +293,11 @@ export default function Admin() {
             onChange={(e) => setPassword(e.target.value)}
             required
             placeholder="Password"
+            autoComplete="current-password"
           />
           <button disabled={busy}>Email sign in</button>
-        </form>
-        <div className="row">
-          <button
-            disabled={busy || localTest}
-            onClick={() =>
-              void run(async () => {
-                await signInWithPopup(auth(), new GoogleAuthProvider());
-                await load();
-              })
-            }
-          >
-            Google sign in
-          </button>
+        </form>}
+        {profile && <div className="row">
           <button disabled={busy} onClick={() => void run(load)}>
             Load / refresh dashboard
           </button>
@@ -297,6 +305,7 @@ export default function Admin() {
             disabled={busy}
             onClick={() =>
               void run(async () => {
+                signedInHere.current = false;
                 await signOut(auth());
                 setProfile(null);
                 setRows([]);
@@ -310,7 +319,7 @@ export default function Admin() {
           >
             Sign out
           </button>
-        </div>
+        </div>}
         <p role="status">{message}</p>
         {profile && (
           <>

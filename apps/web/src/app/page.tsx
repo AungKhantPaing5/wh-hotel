@@ -152,7 +152,6 @@ export default function Home() {
         </a>
         <nav>
           <a href="#rooms">Our rooms</a>
-          <a href="/admin">Admin</a>
           <button
             onClick={() => {
               setAccount(!account);

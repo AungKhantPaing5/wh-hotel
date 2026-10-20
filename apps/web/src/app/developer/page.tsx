@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { api, auth } from "../../lib/firebase";
+import { api, auth } from "../../lib/admin-firebase";
 export default function Developer() {
   const [result, setResult] = useState<unknown>(null),
     [error, setError] = useState("");

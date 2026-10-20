@@ -1,20 +1,21 @@
 import { getApps, initializeApp } from "firebase/app";
-import { getAuth, connectAuthEmulator } from "firebase/auth";
+import { getAuth, initializeAuth, inMemoryPersistence, connectAuthEmulator } from "firebase/auth";
 
-export function auth() {
+export function auth(scope = "[DEFAULT]") {
   if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
     throw new Error(
       "Sign-in is not configured. Add Firebase settings and rebuild the website.",
     );
-  const app =
-    getApps()[0] ||
-    initializeApp({
+  const existing = getApps().find(app => app.name === scope);
+  const app = existing || initializeApp({
       apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
       authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
       projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
       appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-    });
-  const instance = getAuth(app);
+    }, scope);
+  const instance = !existing && scope === "wn-admin"
+    ? initializeAuth(app, { persistence: inMemoryPersistence })
+    : getAuth(app);
   if (
     process.env.NEXT_PUBLIC_LOCAL_TEST === "true" &&
     !instance.emulatorConfig
@@ -35,11 +36,12 @@ export async function api(
   path: string,
   init: RequestInit = {},
   authenticated = false,
+  scope = "[DEFAULT]",
 ) {
   const headers = new Headers(init.headers);
   if (init.body) headers.set("Content-Type", "application/json");
   if (authenticated) {
-    const current = auth().currentUser;
+    const current = auth(scope).currentUser;
     if (!current) throw new Error("Please sign in first.");
     headers.set("Authorization", `Bearer ${await current.getIdToken()}`);
   }
