@@ -155,7 +155,10 @@ export default function Home() {
           <button
             onClick={() => {
               setAccount(!account);
-              if (authSafe()) void task(refreshProfile);
+              void task(async () => {
+                await auth().authStateReady();
+                if (auth().currentUser) await refreshProfile();
+              });
             }}
           >
             My account
@@ -484,11 +487,4 @@ export default function Home() {
       </footer>
     </>
   );
-}
-function authSafe() {
-  try {
-    return !!auth().currentUser;
-  } catch {
-    return false;
-  }
 }
