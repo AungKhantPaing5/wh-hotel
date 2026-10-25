@@ -1437,3 +1437,14 @@ footer small {
   z-index: 1001;
   overflow: auto;
 }
+
+@media (max-width: 360px) {
+  .room-bottom {
+    flex-wrap: wrap;
+  }
+  .search button {
+    font-size: 10px;
+    padding: 10px 8px;
+    gap: 5px;
+  }
+}

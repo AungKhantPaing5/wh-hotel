@@ -146,7 +146,23 @@ export default function Home() {
         node.inert = true;
       });
       firstInput.current?.focus();
+      // Disabling a submitting button can return focus to the document body.
+      // Handle Escape there too, while allowing Firebase challenge frames to work.
+      const onDocumentKey = (event: KeyboardEvent) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeAuth();
+        } else if (
+          event.key === "Tab" &&
+          document.activeElement === document.body
+        ) {
+          event.preventDefault();
+          firstInput.current?.focus();
+        }
+      };
+      document.addEventListener("keydown", onDocumentKey, true);
       return () => {
+        document.removeEventListener("keydown", onDocumentKey, true);
         document.body.style.overflow = old;
         background.forEach((node, i) => {
           node.inert = inertBefore[i];
@@ -386,10 +402,18 @@ export default function Home() {
             </>
           ) : (
             <>
-              <button className="nav-login" onClick={() => openAuth("login")}>
+              <button
+                className="nav-login"
+                aria-haspopup="dialog"
+                onClick={() => openAuth("login")}
+              >
                 Login
               </button>
-              <button className="nav-signup" onClick={() => openAuth("signup")}>
+              <button
+                className="nav-signup"
+                aria-haspopup="dialog"
+                onClick={() => openAuth("signup")}
+              >
                 Sign up <Icon name="arrow" />
               </button>
             </>
@@ -508,6 +532,7 @@ export default function Home() {
         )}
         {account && signedIn && (
           <section
+            id="account-panel"
             ref={accountPanel}
             tabIndex={-1}
             className="account"

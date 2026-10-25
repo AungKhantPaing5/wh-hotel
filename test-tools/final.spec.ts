@@ -271,19 +271,41 @@ for (const viewport of [
   });
 }
 
-test('signup creates a Firebase account and offers required contact verification', async ({page}) => {
-  await page.goto('/');
-  await page.getByRole('button',{name:'Sign up',exact:true}).click();
-  await page.getByLabel('Login email',{exact:true}).fill(`signup-${Date.now()}@wh.test`);
-  await page.getByLabel('Login password',{exact:true}).fill('SignupTest2026!');
-  await page.getByLabel('Confirm password',{exact:true}).fill('SignupTest2026!');
-  await page.getByRole('button',{name:'Create account',exact:true}).click();
-  await expect(page.getByRole('dialog')).not.toBeVisible();
-  await expect(page.getByRole('heading',{name:'Your WN account',exact:true})).toBeVisible();
-  await expect(page.getByText('Email verification required',{exact:true})).toBeVisible();
-  await expect(page.getByText('Phone verification required',{exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Send verification email',exact:true})).toBeVisible();
-  await expect(page.getByRole('button',{name:'Send verification code',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'Sign out',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Login',exact:true})).toBeVisible();
+test("signup creates a Firebase account and offers required contact verification", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
+  await page
+    .getByLabel("Login email", { exact: true })
+    .fill(`signup-${Date.now()}@wh.test`);
+  await page
+    .getByLabel("Login password", { exact: true })
+    .fill("SignupTest2026!");
+  await page
+    .getByLabel("Confirm password", { exact: true })
+    .fill("SignupTest2026!");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your WN account", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Email verification required", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Phone verification required", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send verification email", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send verification code", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Login", exact: true }),
+  ).toBeVisible();
 });
