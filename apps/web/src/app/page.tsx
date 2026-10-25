@@ -5,16 +5,12 @@ import {
   OAuthProvider,
   signInWithPopup,
   signOut,
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  linkWithPhoneNumber,
   verifyBeforeUpdateEmail,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
   sendPasswordResetEmail,
   onAuthStateChanged,
-  type ConfirmationResult,
 } from "firebase/auth";
 import { api, auth } from "../lib/firebase";
 
@@ -35,8 +31,13 @@ type Booking = {
   check_out: string;
   total_amount_minor: string;
 };
-type Profile = { uid: string; needsEmail: boolean; needsPhone: boolean };
-type AuthView = "login" | "signup" | "reset" | "phone" | "verify-phone";
+type Profile = {
+  uid: string;
+  needsEmail: boolean;
+  needsPhone: boolean;
+  phone: string | null;
+};
+type AuthView = "login" | "signup" | "reset" | "contact";
 const localTest = process.env.NEXT_PUBLIC_LOCAL_TEST === "true";
 const money = (minor: string) =>
   new Intl.NumberFormat("en-US").format(Number(minor) / 100) + " MMK";
@@ -98,14 +99,10 @@ export default function Home() {
     [password, setPassword] = useState(""),
     [repeatPassword, setRepeatPassword] = useState(""),
     [showPassword, setShowPassword] = useState(false);
-  const [phone, setPhone] = useState(""),
-    [code, setCode] = useState(""),
-    [otpSent, setOtpSent] = useState(false);
+  const [phone, setPhone] = useState("");
   const dialog = useRef<HTMLDialogElement | null>(null),
     firstInput = useRef<HTMLInputElement | null>(null),
     accountPanel = useRef<HTMLElement | null>(null);
-  const confirmation = useRef<ConfirmationResult | null>(null),
-    captcha = useRef<RecaptchaVerifier | null>(null);
   const request = useRef<{ fingerprint: string; key: string } | null>(null);
   const initiator = useRef<HTMLElement | null>(null);
 
@@ -117,11 +114,20 @@ export default function Home() {
     try {
       return onAuthStateChanged(auth(), (user) => {
         setSignedIn(Boolean(user));
-        if (user && !user.phoneNumber) {
-          setAuthMessage(
-            "Complete your account: verify your phone number with an SMS code.",
-          );
-          setAuthView("verify-phone");
+        if (user) {
+          void api("me", {}, true)
+            .then((next: Profile) => {
+              if (auth().currentUser?.uid !== user.uid) return;
+              setProfile(next);
+              setPhone(next.phone || "");
+              if (next.needsPhone) {
+                setAuthMessage(
+                  "Complete your account: add your phone number. No SMS code is required.",
+                );
+                setAuthView("contact");
+              }
+            })
+            .catch((error) => setMessage(error.message));
         }
         if (!user) {
           setProfile(null);
@@ -142,8 +148,6 @@ export default function Home() {
       }
       const old = document.body.style.overflow;
       document.body.style.overflow = "hidden";
-      // Keep Firebase's reCAPTCHA challenge usable outside the dialog's DOM tree.
-      // A native showModal() would make that challenge inert.
       const background = Array.from(
         document.querySelectorAll<HTMLElement>(".site-header,main,footer"),
       );
@@ -153,7 +157,7 @@ export default function Home() {
       });
       firstInput.current?.focus();
       // Disabling a submitting button can return focus to the document body.
-      // Handle Escape there too, while allowing Firebase challenge frames to work.
+      // Handle Escape there too.
       const onDocumentKey = (event: KeyboardEvent) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -191,9 +195,7 @@ export default function Home() {
       });
     }
   }, [account]);
-  useEffect(() => () => captcha.current?.clear(), []);
   function openAuth(view: AuthView) {
-    clearOtp();
     setAuthMessage("");
     setPassword("");
     setRepeatPassword("");
@@ -201,7 +203,6 @@ export default function Home() {
     setAuthView(view);
   }
   function closeAuth() {
-    clearOtp();
     setAuthView(null);
     setPassword("");
     setRepeatPassword("");
@@ -230,9 +231,9 @@ export default function Home() {
     const nextProfile = await refreshProfile();
     if (nextProfile.needsPhone) {
       setAccount(false);
-      openAuth("verify-phone");
+      openAuth("contact");
       setAuthMessage(
-        "Complete your account: verify your phone number with an SMS code.",
+        "Complete your account: add your phone number. No SMS code is required.",
       );
       return;
     }
@@ -256,7 +257,7 @@ export default function Home() {
         password,
       );
       let notice =
-        "Your account is ready. Please verify your email and phone before your stay.";
+        "Your account is ready. Please add your phone number and check your verification email.";
       try {
         await sendEmailVerification(result.user);
       } catch {
@@ -279,42 +280,18 @@ export default function Home() {
     );
     await finishLogin();
   }
-  function clearOtp() {
-    confirmation.current = null;
-    setOtpSent(false);
-    setCode("");
-    captcha.current?.clear();
-    captcha.current = null;
-  }
-  async function sendOtp() {
-    if (!/^\+[1-9]\d{7,14}$/.test(phone))
-      throw new Error("Use your country code, for example +959...");
-    captcha.current ||= new RecaptchaVerifier(auth(), "captcha", {
-      size: "invisible",
-    });
-    try {
-      const current = auth().currentUser;
-      confirmation.current = current
-        ? await linkWithPhoneNumber(current, phone, captcha.current)
-        : await signInWithPhoneNumber(auth(), phone, captcha.current);
-      setOtpSent(true);
-      (authView ? setAuthMessage : setMessage)(
-        "Code sent. Enter the verification code from your SMS.",
+  async function savePhone() {
+    if (!/^09[0-9]{9}$/.test(phone))
+      throw new Error(
+        "Phone number must start with 09 and contain exactly 11 digits.",
       );
-    } catch (e) {
-      captcha.current?.clear();
-      captcha.current = null;
-      throw e;
-    }
-  }
-  async function verifyOtp() {
-    if (!confirmation.current)
-      throw new Error("Request a verification code first.");
-    await confirmation.current.confirm(code);
-    await auth().currentUser?.getIdToken(true);
-    clearOtp();
+    await api(
+      "me/contact",
+      { method: "PATCH", body: JSON.stringify({ phone }) },
+      true,
+    );
     await finishLogin();
-    setMessage("Phone verified.");
+    setMessage("Phone number saved. No SMS verification is required.");
   }
   async function logout() {
     await signOut(auth());
@@ -323,7 +300,6 @@ export default function Home() {
     setBookings([]);
     setAccount(false);
     setMessage("You have signed out.");
-    clearOtp();
   }
   async function book(room: Room) {
     if (!checkIn || !checkOut)
@@ -336,9 +312,9 @@ export default function Home() {
       openAuth("login");
       return;
     }
-    if (!auth().currentUser?.phoneNumber) {
-      openAuth("verify-phone");
-      setAuthMessage("Verify your phone number before requesting a stay.");
+    if ((await api("me", {}, true)).needsPhone) {
+      openAuth("contact");
+      setAuthMessage("Add your phone number before requesting a stay.");
       return;
     }
     const body = { roomTypeId: room.id, checkIn, checkOut, guests };
@@ -382,17 +358,15 @@ export default function Home() {
       `Request ${result.id} received. Status: ${result.status}. The hotel will review your request.`,
     );
   }
-  const phoneMode = authView === "phone" || authView === "verify-phone";
+  const phoneMode = authView === "contact";
   const authTitle =
     authView === "signup"
       ? "Make yourself at home"
       : authView === "reset"
         ? "Forgot your password?"
-        : authView === "verify-phone"
-          ? "Verify your phone number"
-          : authView === "phone"
-            ? "A code, and you’re in"
-            : "Welcome back";
+        : authView === "contact"
+          ? "Add your phone number"
+          : "Welcome back";
   const heroPhoto = rooms.find((r) => r.photo_urls?.[0])?.photo_urls?.[0];
   return (
     <>
@@ -589,8 +563,8 @@ export default function Home() {
                 <div className="verification-summary">
                   <span>
                     {profile.needsPhone
-                      ? "Phone verification required"
-                      : "Phone verified."}
+                      ? "Phone number required"
+                      : "Phone number saved."}
                   </span>
                   <span>
                     {profile.needsEmail
@@ -632,48 +606,14 @@ export default function Home() {
                 )}
                 {profile.needsPhone && (
                   <div className="verification-block">
-                    <h3>Verify your phone</h3>
+                    <h3>Add your phone number</h3>
                     <p>
-                      We require a verified phone number before you can request
-                      a stay.
+                      Start with 09 and enter exactly 11 digits. No SMS code is
+                      required.
                     </p>
-                    <div className="row">
-                      <input
-                        aria-label="Phone number"
-                        type="tel"
-                        autoComplete="tel"
-                        placeholder="+959..."
-                        value={phone}
-                        onChange={(e) => {
-                          setPhone(e.target.value);
-                          if (otpSent) clearOtp();
-                        }}
-                      />
-                      <button
-                        disabled={busy}
-                        onClick={() => void task(sendOtp)}
-                      >
-                        {otpSent ? "Resend code" : "Send verification code"}
-                      </button>
-                      {otpSent && (
-                        <>
-                          <input
-                            aria-label="SMS code"
-                            inputMode="numeric"
-                            autoComplete="one-time-code"
-                            placeholder="SMS code"
-                            value={code}
-                            onChange={(e) => setCode(e.target.value)}
-                          />
-                          <button
-                            disabled={busy}
-                            onClick={() => void task(verifyOtp)}
-                          >
-                            Verify phone
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    <button disabled={busy} onClick={() => openAuth("contact")}>
+                      Add phone number
+                    </button>
                   </div>
                 )}
               </>
@@ -917,9 +857,7 @@ export default function Home() {
                 : authView === "reset"
                   ? "We’ll send you a link to reset your password."
                   : phoneMode
-                    ? authView === "verify-phone"
-                      ? "Enter your phone number, request an SMS code, then enter the code to finish setup."
-                      : "Sign in securely with your phone number."
+                    ? "Enter a number starting with 09, with exactly 11 digits. No OTP or SMS verification is required."
                     : "Log in to plan your stay and manage your bookings."}
             </p>
             {authView && (
@@ -1024,7 +962,7 @@ export default function Home() {
                 className="auth-form"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void task(otpSent ? verifyOtp : sendOtp, true);
+                  void task(savePhone, true);
                 }}
               >
                 <label htmlFor="auth-phone">Phone number</label>
@@ -1035,46 +973,21 @@ export default function Home() {
                   type="tel"
                   autoComplete="tel"
                   required
-                  placeholder="+959..."
+                  placeholder="09xxxxxxxxx"
+                  inputMode="numeric"
+                  pattern="09[0-9]{9}"
+                  minLength={11}
+                  maxLength={11}
+                  title="Start with 09 and enter exactly 11 digits"
                   value={phone}
                   onChange={(e) => {
                     setPhone(e.target.value);
-                    if (otpSent) clearOtp();
                   }}
                 />
-                {otpSent && (
-                  <>
-                    <label htmlFor="auth-code">Verification code</label>
-                    <input
-                      id="auth-code"
-                      aria-label="SMS code"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      required
-                      placeholder="Enter your SMS code"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                    />
-                  </>
-                )}
                 <button className="auth-submit" disabled={busy}>
-                  {busy
-                    ? "Please wait…"
-                    : otpSent
-                      ? "Verify and continue"
-                      : "Send verification code"}
+                  {busy ? "Saving…" : "Save and continue"}
                   <Icon name="arrow" />
                 </button>
-                {otpSent && (
-                  <button
-                    type="button"
-                    className="text-button"
-                    disabled={busy}
-                    onClick={() => void task(sendOtp, true)}
-                  >
-                    Resend code
-                  </button>
-                )}
               </form>
             )}
             {(authView === "login" || authView === "signup") && (
@@ -1108,16 +1021,9 @@ export default function Home() {
                     Apple
                   </button>
                 </div>
-                <button
-                  className="phone-login"
-                  disabled={busy}
-                  onClick={() => openAuth("phone")}
-                >
-                  Continue with phone number
-                </button>
               </>
             )}
-            {authView === "verify-phone" ? (
+            {authView === "contact" ? (
               <button
                 className="auth-switch"
                 disabled={busy}
@@ -1130,7 +1036,7 @@ export default function Home() {
               >
                 Sign out and finish later
               </button>
-            ) : authView === "reset" || authView === "phone" ? (
+            ) : authView === "reset" ? (
               <button className="auth-switch" onClick={() => openAuth("login")}>
                 Back to login
               </button>
@@ -1154,7 +1060,6 @@ export default function Home() {
           </div>
         </div>
       </dialog>
-      <div id="captcha" />
     </>
   );
 }

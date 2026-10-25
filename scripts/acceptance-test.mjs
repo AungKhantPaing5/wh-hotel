@@ -33,23 +33,19 @@ try{
  await call('admin/system',staff,'GET',undefined,undefined,403);
  const unverified=await login('nophone@wh.test');
  await call('bookings',unverified,'POST',body,randomUUID(),403);
- console.log('PASS authentication, owner boundary and verified-phone booking gate');
- const temporaryEmail=`otp-${randomUUID()}@wh.test`;
- const authRequest=async(action,body)=>{
-  const r=await fetch(`${authBase}/identitytoolkit.googleapis.com/v1/accounts:${action}?key=demo-key`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await r.json();assert.equal(r.status,200,JSON.stringify(data));return data;
- };
- const temporary=await authRequest('signUp',{email:temporaryEmail,password,returnSecureToken:true});
- const testPhone='+959990000010';
- const verification=await authRequest('sendVerificationCode',{phoneNumber:testPhone});
- const codes=await (await fetch(`${authBase}/emulator/v1/projects/demo-wh-final/verificationCodes`)).json();
- const verificationCode=codes.verificationCodes.find(c=>c.sessionInfo===verification.sessionInfo)?.code;
- assert.ok(verificationCode,'Expected emulator-only SMS code.');
- const linked=await authRequest('signInWithPhoneNumber',{sessionInfo:verification.sessionInfo,code:verificationCode,idToken:temporary.idToken,returnSecureToken:true});
- assert.equal(linked.localId,temporary.localId,'Phone linking must preserve UID.');
- const linkedProfile=await call('me',linked.idToken);assert.equal(linkedProfile.needsPhone,false);assert.equal(linkedProfile.needsEmail,true);
- await authRequest('delete',{idToken:linked.idToken});
- console.log('PASS emulator OTP phone linking preserves UID and prompts email verification');
+ console.log('PASS authentication, owner boundary and required-contact booking gate');
+ // Self-reported contact data must be validated and scoped to the signed-in UID.
+ await call('me/contact',null,'PATCH',{phone:'09123456789'},undefined,401);
+ assert.equal((await call('me',unverified)).needsPhone,true);
+ for(const phone of [null,12345678901,'08123456789','0912345678','091234567890','+959123456789','09abcdefghi',' 09123456789','09123456789\n']) {
+   await call('me/contact',unverified,'PATCH',{phone},undefined,400);
+ }
+ await call('me/contact',unverified,'PATCH',{phone:'09123456789'});
+ const contact=await call('me',unverified);
+ assert.equal(contact.phone,'09123456789');assert.equal(contact.needsPhone,false);
+ assert.notEqual((await call('me',guest)).phone, contact.phone);
+ await pool.query('DELETE FROM customer_contacts WHERE firebase_uid=$1',[contact.uid]);
+ console.log('PASS required phone format validation, authenticated persistence and UID isolation without SMS');
 
  await call('admin/staff',owner,'POST',{uid:'wh-test-staff',permissions:['bookings.read','payments.read']},undefined,201);
  await call('admin/bookings',staff);await call('admin/payments',staff);

@@ -48,7 +48,7 @@ test("customer request → owner approval → simulated payment in separate brow
     .fill("WhTestOnly2026!");
   await page.getByRole("button", { name: "Log in", exact: true }).click();
   await expect(
-    page.getByText("Phone verified.", { exact: false }),
+    page.getByText("Phone number saved.", { exact: false }),
   ).toBeVisible();
   const checkIn = new Date(Date.now() + 8 * 86400000)
       .toISOString()
@@ -134,7 +134,7 @@ test("admin requires explicit credentials and stays separate from the customer s
     .fill("WhTestOnly2026!");
   await page.getByRole("button", { name: "Log in", exact: true }).click();
   await expect(
-    page.getByText("Phone verified.", { exact: false }),
+    page.getByText("Phone number saved.", { exact: false }),
   ).toBeVisible();
   await page.goto("/admin");
   await expect(page.getByLabel("Admin email")).toHaveValue("");
@@ -168,7 +168,7 @@ test("admin requires explicit credentials and stays separate from the customer s
   await page.goto("/");
   await page.getByRole("button", { name: "My bookings", exact: true }).click();
   await expect(
-    page.getByText("Phone verified.", { exact: false }),
+    page.getByText("Phone number saved.", { exact: false }),
   ).toBeVisible();
   await page.goto("/admin");
   await page.getByLabel("Admin email").fill("admin@wh.test");
@@ -248,13 +248,6 @@ for (const viewport of [
       .getByRole("button", { name: "Back to login", exact: true })
       .click();
     await page
-      .getByRole("button", { name: "Continue with phone number", exact: true })
-      .click();
-    await expect(
-      page.getByLabel("Phone number", { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByLabel("SMS code", { exact: true })).toHaveCount(0);
-    await page
       .getByRole("button", { name: "Close login", exact: true })
       .click();
     await expect
@@ -271,12 +264,12 @@ for (const viewport of [
   });
 }
 
-test("signup requires phone OTP, preserves the account, and resumes after reload", async ({
+test("signup requires a valid local phone number without SMS and persists after reload", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign up", exact: true }).click();
-  const email = `signup-${Date.now()}@wh.test`;
+  const email = `contact-${Date.now()}@wh.test`;
   await page.getByLabel("Login email", { exact: true }).fill(email);
   await page
     .getByLabel("Login password", { exact: true })
@@ -288,64 +281,30 @@ test("signup requires phone OTP, preserves the account, and resumes after reload
     .getByRole("button", { name: "Create account", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", {
-      name: "Verify your phone number",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Add your phone number", exact: true }),
   ).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole("heading", {
-      name: "Verify your phone number",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Add your phone number", exact: true }),
   ).toBeVisible();
-  const before = await page.request.post(
-    "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
-    { data: { email, password: "SignupTest2026!", returnSecureToken: true } },
-  );
-  expect(before.ok()).toBeTruthy();
-  const original = await before.json();
-  const phone = "+16505550731";
-  await page.getByLabel("Phone number", { exact: true }).fill(phone);
+  await expect(page.getByLabel("SMS code", { exact: true })).toHaveCount(0);
+  const number = page.getByLabel("Phone number", { exact: true });
+  for (const invalid of ["08123456789", "0912345678", "09abcdefghi"]) {
+    await number.fill(invalid);
+    await page
+      .getByRole("button", { name: "Save and continue", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(number).toBeFocused();
+  }
+  await number.fill("09123456789");
   await page
-    .getByRole("button", { name: "Send verification code", exact: true })
-    .click();
-  await expect(page.getByLabel("SMS code", { exact: true })).toBeVisible();
-  const codes = await page.request.get(
-    "http://127.0.0.1:9099/emulator/v1/projects/demo-wh-final/verificationCodes",
-  );
-  const verification = (await codes.json()).verificationCodes.find(
-    (entry: { phoneNumber: string }) => entry.phoneNumber === phone,
-  );
-  expect(verification).toBeTruthy();
-  // A rejected code must leave onboarding open.
-  const wrong = verification.code === "000000" ? "111111" : "000000";
-  await page.getByLabel("SMS code", { exact: true }).fill(wrong);
-  await page
-    .getByRole("button", { name: "Verify and continue", exact: true })
-    .click();
-  await expect(page.getByRole("dialog").getByRole("status")).toContainText(
-    "invalid-verification-code",
-  );
-  await page.getByLabel("SMS code", { exact: true }).fill(verification.code);
-  await page
-    .getByRole("button", { name: "Verify and continue", exact: true })
+    .getByRole("button", { name: "Save and continue", exact: true })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(
-    page.getByText("Phone verified.", { exact: true }).first(),
+    page.getByText("Phone number saved.", { exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Send verification email", exact: true }),
-  ).toBeVisible();
-  const lookup = await page.request.post(
-    "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:lookup?key=fake-api-key",
-    { data: { idToken: original.idToken } },
-  );
-  const user = (await lookup.json()).users[0];
-  expect(user.localId).toBe(original.localId);
-  expect(user.phoneNumber).toBe(phone);
   await page.reload();
   await expect(
     page.getByRole("button", { name: "My bookings", exact: true }),

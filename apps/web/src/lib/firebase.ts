@@ -36,8 +36,6 @@ export function auth(scope = "[DEFAULT]") {
       !["localhost", "127.0.0.1"].includes(window.location.hostname)
     )
       throw new Error("Local testing must run on localhost.");
-    // Mock reCAPTCHA only inside the explicitly localhost-only emulator branch.
-    instance.settings.appVerificationDisabledForTesting = true;
     connectAuthEmulator(instance, "http://127.0.0.1:9099", {
       disableWarnings: false,
     });

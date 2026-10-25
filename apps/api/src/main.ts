@@ -40,7 +40,8 @@ if (
   );
 }
 const photoDirectory = resolve(process.env.PHOTO_DIRECTORY || "/app/uploads");
-const managedPhoto = (url: unknown): url is string => typeof url === "string" && /^\/api\/photos\/[a-f0-9]{64}\.webp$/.test(url);
+const managedPhoto = (url: unknown): url is string =>
+  typeof url === "string" && /^\/api\/photos\/[a-f0-9]{64}\.webp$/.test(url);
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 if (process.env.FIREBASE_PROJECT_ID) {
   initializeApp({
@@ -58,6 +59,22 @@ async function user(authorization?: string) {
   } catch {
     throw new UnauthorizedException("Please sign in again.");
   }
+}
+
+// Contact details are self-reported; never mark these numbers as Firebase-verified.
+async function contactPhone(
+  uid: string,
+  verifiedPhone?: string,
+): Promise<string | null> {
+  const saved = (
+    await db.query(
+      "SELECT phone FROM customer_contacts WHERE firebase_uid=$1",
+      [uid],
+    )
+  ).rows[0]?.phone;
+  if (saved) return saved;
+  const local = verifiedPhone?.replace(/^\+95/, "0");
+  return local && /^09[0-9]{9}$/.test(local) ? local : null;
 }
 
 const permissions = [
@@ -153,16 +170,34 @@ class ApiController {
   @Get("me") async me(@Headers("authorization") authorization?: string) {
     const identity = await user(authorization);
     const profile = await getAuth().getUser(identity.uid);
+    const phone = await contactPhone(identity.uid, profile.phoneNumber);
     return {
       uid: identity.uid,
       email: profile.email,
       emailVerified: profile.emailVerified,
-      phone: profile.phoneNumber,
+      phone,
       needsEmail: !profile.email || !profile.emailVerified,
-      needsPhone: !profile.phoneNumber,
+      needsPhone: !phone,
       permissions: await grants(identity.uid),
       isOwner: isOwner(identity.uid),
     };
+  }
+
+  @Patch("me/contact") async saveContact(
+    @Headers("authorization") authorization: string,
+    @Body() body: { phone?: unknown },
+  ) {
+    const identity = await user(authorization);
+    if (typeof body.phone !== "string" || !/^09[0-9]{9}$/.test(body.phone))
+      throw new BadRequestException(
+        "Phone number must start with 09 and contain exactly 11 digits.",
+      );
+    await db.query(
+      `INSERT INTO customer_contacts(firebase_uid,phone) VALUES($1,$2)
+      ON CONFLICT(firebase_uid) DO UPDATE SET phone=EXCLUDED.phone,updated_at=now()`,
+      [identity.uid, body.phone],
+    );
+    return { phone: body.phone, needsPhone: false };
   }
 
   @Get("bookings") async bookings(
@@ -190,8 +225,10 @@ class ApiController {
   ) {
     const identity = await user(authorization);
     const profile = await getAuth().getUser(identity.uid);
-    if (!profile.phoneNumber)
-      throw new ForbiddenException("Verify a phone number before booking.");
+    if (!(await contactPhone(identity.uid, profile.phoneNumber)))
+      throw new ForbiddenException(
+        "Add a phone number starting with 09 and containing exactly 11 digits before booking.",
+      );
     if (typeof key !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(key))
       throw new BadRequestException("A valid Idempotency-Key is required.");
     const [checkIn, checkOut] = stay(body.checkIn, body.checkOut);
@@ -428,40 +465,100 @@ class ApiController {
   }
 
   @Post("admin/room-types/:id/photos")
-  async uploadPhoto(@Headers("authorization") authorization: string, @Param("id") value: string, @Body() body: { data?: unknown }) {
+  async uploadPhoto(
+    @Headers("authorization") authorization: string,
+    @Param("id") value: string,
+    @Body() body: { data?: unknown },
+  ) {
     const current = await admin(authorization, "rooms.manage");
     const typeId = Number(value);
-    if (!Number.isSafeInteger(typeId) || typeId < 1 || typeof body.data !== "string" ||
-      body.data.length > 7_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.data)) {
-      throw new BadRequestException("Choose a JPEG, PNG or WebP image up to 5 MiB.");
+    if (
+      !Number.isSafeInteger(typeId) ||
+      typeId < 1 ||
+      typeof body.data !== "string" ||
+      body.data.length > 7_000_000 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(body.data)
+    ) {
+      throw new BadRequestException(
+        "Choose a JPEG, PNG or WebP image up to 5 MiB.",
+      );
     }
     const input = Buffer.from(body.data, "base64");
-    if (!input.length || input.length > 5 * 1024 * 1024 || input.toString("base64") !== body.data) throw new BadRequestException("Invalid or oversized image.");
+    if (
+      !input.length ||
+      input.length > 5 * 1024 * 1024 ||
+      input.toString("base64") !== body.data
+    )
+      throw new BadRequestException("Invalid or oversized image.");
     let output: Buffer;
     try {
-      const image = sharp(input, { limitInputPixels: 20_000_000, animated: false });
+      const image = sharp(input, {
+        limitInputPixels: 20_000_000,
+        animated: false,
+      });
       const metadata = await image.metadata();
-      if (!["jpeg", "png", "webp"].includes(metadata.format || "") || (metadata.pages || 1) > 1) throw new Error("Unsupported image");
-      output = await image.rotate().resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
-    } catch { throw new BadRequestException("The file is not a supported image, is damaged, or exceeds 20 megapixels."); }
-    const filename = createHash("sha256").update(output).digest("hex") + ".webp";
+      if (
+        !["jpeg", "png", "webp"].includes(metadata.format || "") ||
+        (metadata.pages || 1) > 1
+      )
+        throw new Error("Unsupported image");
+      output = await image
+        .rotate()
+        .resize({
+          width: 1600,
+          height: 1600,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 82 })
+        .toBuffer();
+    } catch {
+      throw new BadRequestException(
+        "The file is not a supported image, is damaged, or exceeds 20 megapixels.",
+      );
+    }
+    const filename =
+      createHash("sha256").update(output).digest("hex") + ".webp";
     const url = "/api/photos/" + filename;
     const client = await db.connect();
     try {
       await client.query("BEGIN");
-      const room = (await client.query("SELECT photo_urls FROM room_types WHERE id=$1 FOR UPDATE", [typeId])).rows[0];
+      const room = (
+        await client.query(
+          "SELECT photo_urls FROM room_types WHERE id=$1 FOR UPDATE",
+          [typeId],
+        )
+      ).rows[0];
       if (!room) throw new NotFoundException();
-      if (!room.photo_urls.includes(url) && room.photo_urls.length >= 8) throw new BadRequestException("A room type can have at most 8 photos.");
+      if (!room.photo_urls.includes(url) && room.photo_urls.length >= 8)
+        throw new BadRequestException("A room type can have at most 8 photos.");
       await mkdir(photoDirectory, { recursive: true });
       // Content-addressed output is safe to share between room types and retries.
-      try { await writeFile(join(photoDirectory, filename), output, { flag: "wx", mode: 0o644 }); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-      if (!room.photo_urls.includes(url)) await client.query("UPDATE room_types SET photo_urls=array_append(photo_urls,$2) WHERE id=$1", [typeId, url]);
-      await client.query("INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)", [current.uid, "room.photo.upload", JSON.stringify({ typeId, url })]);
+      try {
+        await writeFile(join(photoDirectory, filename), output, {
+          flag: "wx",
+          mode: 0o644,
+        });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+      if (!room.photo_urls.includes(url))
+        await client.query(
+          "UPDATE room_types SET photo_urls=array_append(photo_urls,$2) WHERE id=$1",
+          [typeId, url],
+        );
+      await client.query(
+        "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
+        [current.uid, "room.photo.upload", JSON.stringify({ typeId, url })],
+      );
       await client.query("COMMIT");
       return { url };
-    } catch (error) { await client.query("ROLLBACK"); throw error; }
-    finally { client.release(); }
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   @Get("photos/:filename")
@@ -471,8 +568,16 @@ class ApiController {
     if (!/^[a-f0-9]{64}\.webp$/.test(filename)) throw new NotFoundException();
     const path = join(photoDirectory, filename);
     let info;
-    try { info = await stat(path); } catch { throw new NotFoundException(); }
-    return new StreamableFile(createReadStream(path), { type: "image/webp", disposition: "inline", length: info.size });
+    try {
+      info = await stat(path);
+    } catch {
+      throw new NotFoundException();
+    }
+    return new StreamableFile(createReadStream(path), {
+      type: "image/webp",
+      disposition: "inline",
+      length: info.size,
+    });
   }
 
   @Get("admin/rooms") async physicalRooms(
@@ -699,7 +804,9 @@ class AppModule {}
 
 async function bootstrap() {
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   app.useBodyParser("json", { limit: "8mb" });
   app.enableCors({ origin: process.env.WEB_ORIGIN || "http://localhost:3000" });
   app.enableShutdownHooks();
