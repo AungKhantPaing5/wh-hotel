@@ -402,11 +402,9 @@ test("owner adds and renames physical rooms; guests see numbers and can open boo
     page.getByRole("form", { name: "Edit room 602", exact: true }),
   ).toBeVisible();
   await page.goto("/");
-  await expect(page.locator(".room-numbers").first()).toContainText("602");
-  await page
-    .getByRole("button", { name: "Request stay", exact: true })
-    .first()
-    .click();
+  const deluxe=page.locator("article").filter({has:page.getByRole("heading",{name:"Deluxe Double",exact:true})});
+  await expect(deluxe.locator(".room-numbers")).toContainText("602");
+  await deluxe.getByRole("button",{name:"Request stay",exact:true}).click();
   const booking = page.getByRole("form", {
     name: "Request Deluxe Double",
     exact: true,
