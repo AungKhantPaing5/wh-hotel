@@ -29,7 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : {}),
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
-        ...((!nativeFirebase || process.env.EXPO_PUBLIC_LOCAL_TEST === "true")
+        ...(!nativeFirebase || process.env.EXPO_PUBLIC_LOCAL_TEST === "true"
           ? {
               NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
               NSLocalNetworkUsageDescription:
@@ -39,8 +39,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
     },
     android: {
-      package: "com.whhotel.wh_mobile",
-      adaptiveIcon:{foregroundImage:"./assets/adaptive-icon.png",backgroundColor:"#24483a"},
+      package: "com.wnhotel.wh_mobile",
+      adaptiveIcon: {
+        foregroundImage: "./assets/adaptive-icon.png",
+        backgroundColor: "#24483a",
+      },
       ...(nativeFirebase
         ? {
             googleServicesFile:
@@ -56,7 +59,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "expo-build-properties",
         {
           android: {
-            usesCleartextTraffic: (!nativeFirebase || process.env.EXPO_PUBLIC_LOCAL_TEST === "true"),
+            usesCleartextTraffic:
+              !nativeFirebase || process.env.EXPO_PUBLIC_LOCAL_TEST === "true",
           },
           ios: {
             useFrameworks: "static",
@@ -69,7 +73,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             "@react-native-firebase/app",
             "@react-native-firebase/auth",
             process.env.GOOGLE_IOS_URL_SCHEME
-              ? ["@react-native-google-signin/google-signin", {iosUrlScheme:process.env.GOOGLE_IOS_URL_SCHEME}]
+              ? [
+                  "@react-native-google-signin/google-signin",
+                  { iosUrlScheme: process.env.GOOGLE_IOS_URL_SCHEME },
+                ]
               : "@react-native-google-signin/google-signin",
           ] as NonNullable<ExpoConfig["plugins"]>)
         : []),

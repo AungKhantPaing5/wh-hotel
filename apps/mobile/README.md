@@ -48,7 +48,7 @@ Native Firebase လိုတဲ့အတွက် **development build** လိ�
 
 | Platform | Firebase app identity | Local file |
 |---|---|---|
-| Android | `com.whhotel.wh_mobile` | `google-services.json` |
+| Android | `com.wnhotel.wh_mobile` | `google-services.json` |
 | iOS | `com.whhotel.whMobile` | `GoogleService-Info.plist` |
 
 ```dotenv
@@ -203,7 +203,7 @@ The My bookings screen refreshes while open and supports pull-to-refresh. Bookin
 
 The auth-disabled preview APK is not a working live authentication build. Use `.github/workflows/android-live.yml` for the standalone Android Firebase build:
 
-1. In Firebase project `hotelbooking-d9229`, register an Android app with package `com.whhotel.wh_mobile`.
+1. In Firebase project `hotelbooking-d9229`, register an Android app with package `com.wnhotel.wh_mobile`.
 2. Download the **Android client** `google-services.json`. Do not use a Firebase Admin/service-account key.
 3. Add its complete contents to the repository Actions secret `EXPO_ANDROID_GOOGLE_SERVICES_JSON`.
 4. Set the Actions variable `EXPO_PUBLIC_API_URL` to `https://thai1.payapi.uk/api` (this is also the workflow fallback).
@@ -213,3 +213,5 @@ The auth-disabled preview APK is not a working live authentication build. Use `.
 If the client configuration secret is missing, the workflow reports that the live APK was not built. It never silently substitutes an auth-disabled preview. Apple on Android additionally needs the Apple Service ID and redirect URI configured in the existing native adapter.
 
 Real device sign-in and booking tests must be completed after the actual Android Firebase configuration is supplied. Mobile unit tests and bundle export validate the implementation but do not establish real Firebase sign-in or inbox delivery.
+
+The supplied Firebase Android client configuration is included in `firebase/android-client.json`. It is public client configuration embedded in the APK, not a Firebase Admin/service-account credential. The live Android workflow prefers `EXPO_ANDROID_GOOGLE_SERVICES_JSON` when supplied, otherwise uses that file. The APK artifact also includes signing fingerprints for registering this test build with Firebase Google sign-in.

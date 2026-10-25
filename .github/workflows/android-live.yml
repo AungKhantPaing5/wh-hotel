@@ -34,16 +34,17 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';
-          if(!process.env.FIREBASE_ANDROID){
+          const raw=process.env.FIREBASE_ANDROID || (fs.existsSync('firebase/android-client.json') ? fs.readFileSync('firebase/android-client.json','utf8') : '');
+          if(!raw){
             fs.appendFileSync(process.env.GITHUB_OUTPUT,'configured=false\n');
             console.log('::warning::Add the Firebase Android client google-services.json as EXPO_ANDROID_GOOGLE_SERVICES_JSON. Live authentication APK was not built.');
             process.exit(0);
           }
-          const config=JSON.parse(process.env.FIREBASE_ANDROID);
+          const config=JSON.parse(raw);
           if(config.private_key||config.type==='service_account')throw new Error('Use Android client config; never upload Firebase Admin credentials.');
-          const client=config.client?.find(client=>client.client_info?.android_client_info?.package_name==='com.whhotel.wh_mobile');
-          if(!client)throw new Error('Register the Android package com.whhotel.wh_mobile in your Firebase project first.');
-          fs.writeFileSync('google-services.json',process.env.FIREBASE_ANDROID);
+          const client=config.client?.find(client=>client.client_info?.android_client_info?.package_name==='com.wnhotel.wh_mobile');
+          if(!client)throw new Error('Register the Android package com.wnhotel.wh_mobile in your Firebase project first.');
+          fs.writeFileSync('google-services.json',raw);
           if(!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID){
             const oauth=client.oauth_client?.find(client=>client.client_type===3);
             if(oauth?.client_id)fs.appendFileSync(process.env.GITHUB_ENV,`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=${oauth.client_id}\n`);
@@ -70,7 +71,7 @@ jobs:
       - name: Print test signing fingerprints for Firebase Google Sign-In registration
         if: steps.firebase.outputs.configured == 'true'
         working-directory: apps/mobile/android
-        run: ./gradlew signingReport --no-daemon
+        run: ./gradlew signingReport --no-daemon > ../signing-fingerprints.txt
       - name: Build standalone Android APK (test signing, live API)
         if: steps.firebase.outputs.configured == 'true'
         working-directory: apps/mobile/android
@@ -79,6 +80,8 @@ jobs:
         if: steps.firebase.outputs.configured == 'true'
         with:
           name: WN-Android-Live-Firebase-APK
-          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          path: |
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
+            apps/mobile/signing-fingerprints.txt
           if-no-files-found: error
           retention-days: 14
