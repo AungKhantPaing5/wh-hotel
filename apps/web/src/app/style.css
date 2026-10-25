@@ -1646,3 +1646,5 @@ footer small {
     transform: none;
   }
 }
+
+@media(max-width:720px){.booking-fields{grid-template-columns:minmax(0,1fr)}.booking-fields label{min-width:0}}

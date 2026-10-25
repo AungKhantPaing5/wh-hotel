@@ -265,6 +265,10 @@ for (const viewport of [
       path: testInfo.outputPath("home.png"),
       fullPage: true,
     });
+    await page.getByRole("button",{name:"Request stay",exact:true}).first().click();
+    await expect(page.getByRole("button",{name:"Send booking request",exact:true})).toBeVisible();
+    await page.screenshot({path:testInfo.outputPath("booking.png"),fullPage:true});
+
   });
 }
 
