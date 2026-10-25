@@ -188,7 +188,7 @@ class ApiController {
     @Body() body: { phone?: unknown },
   ) {
     const identity = await user(authorization);
-    if (typeof body.phone !== "string" || !/^09[0-9]{9}$/.test(body.phone))
+    if (typeof body.phone !== "string" || body.phone.length !== 11 || !/^09[0-9]{9}$/.test(body.phone))
       throw new BadRequestException(
         "Phone number must start with 09 and contain exactly 11 digits.",
       );

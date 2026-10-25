@@ -281,7 +281,7 @@ export default function Home() {
     await finishLogin();
   }
   async function savePhone() {
-    if (!/^09[0-9]{9}$/.test(phone))
+    if (phone.length !== 11 || !/^09[0-9]{9}$/.test(phone))
       throw new Error(
         "Phone number must start with 09 and contain exactly 11 digits.",
       );
