@@ -47,6 +47,7 @@ services:
       dockerfile: apps/api/Dockerfile
     environment:
       APP_ENV: local-test
+      EMAIL_TEST_MODE: "true"
       DATABASE_URL: postgresql://wh:local-test-only-password@db:5432/wh_test
       FIREBASE_PROJECT_ID: demo-wh-final
       FIREBASE_AUTH_EMULATOR_HOST: auth:9099

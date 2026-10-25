@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { api, auth } from "../../lib/admin-firebase";
 type Booking = {
@@ -11,6 +11,12 @@ type Booking = {
   firebase_uid: string;
   total_amount_minor: string;
   currency: string;
+  guest_email: string | null;
+  guest_phone: string | null;
+  room_number: string;
+  room_type: string;
+  email_status: string | null;
+  email_error: string | null;
 };
 type RoomType = {
   id: number;
@@ -304,6 +310,21 @@ export default function Admin() {
     [calendar, setCalendar] = useState<
       { date: string; rooms: { name: string; available_rooms: number }[] }[]
     >([]);
+  useEffect(() => {
+    if (!profile || tab !== "Bookings") return;
+    let active = true;
+    const timer = setInterval(() => {
+      void api("admin/bookings", {}, true)
+        .then((next) => {
+          if (active) setRows(next);
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [profile, tab]);
   async function run(fn: () => Promise<void>) {
     if (busy) return;
     setBusy(true);
@@ -500,7 +521,74 @@ export default function Admin() {
                       {(Number(b.total_amount_minor) / 100).toLocaleString()}{" "}
                       {b.currency}
                     </p>
-                    <small>Guest UID: {b.firebase_uid}</small>
+                    <div className="booking-contact">
+                      <strong>
+                        Room {b.room_number} · {b.room_type}
+                      </strong>
+                      <p>
+                        Email:{" "}
+                        {b.guest_email ? (
+                          <a href={`mailto:${b.guest_email}`}>
+                            {b.guest_email}
+                          </a>
+                        ) : (
+                          "Not provided"
+                        )}
+                      </p>
+                      <p>
+                        Phone:{" "}
+                        {b.guest_phone ? (
+                          <a href={`tel:${b.guest_phone}`}>{b.guest_phone}</a>
+                        ) : (
+                          "Not provided"
+                        )}
+                      </p>
+                    </div>
+                    {b.email_status && (
+                      <div className="email-delivery">
+                        <strong>
+                          {
+                            (
+                              {
+                                SENT: "Approval email sent (SMTP accepted)",
+                                TEST_SENT:
+                                  "Test email generated — no real email sent",
+                                NOT_CONFIGURED:
+                                  "Email setup required — SMTP is not configured",
+                                PENDING: "Approval email queued",
+                                SENDING: "Sending approval email…",
+                                FAILED: "Approval email failed",
+                                SKIPPED:
+                                  "Approval email skipped — booking no longer active",
+                              } as Record<string, string>
+                            )[b.email_status]
+                          }
+                        </strong>
+                        {b.email_error && <small>{b.email_error}</small>}
+                      </div>
+                    )}
+                    {b.status === "AWAITING_PAYMENT" &&
+                      (!b.email_status || b.email_status === "FAILED") &&
+                      profile.permissions.includes("bookings.manage") && (
+                        <button
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await api(
+                                `admin/bookings/${b.id}/email`,
+                                { method: "POST" },
+                                true,
+                              );
+                              await load();
+                            })
+                          }
+                        >
+                          {b.email_status
+                            ? "Retry approval email"
+                            : "Queue approval email"}
+                        </button>
+                      )}
                     {b.status === "PENDING_APPROVAL" &&
                       profile.permissions.includes("bookings.manage") && (
                         <div className="row">

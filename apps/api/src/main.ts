@@ -29,6 +29,7 @@ import { join, resolve } from "node:path";
 import sharp from "sharp";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { validateStay } from "./dates";
+import { emailConfigured, startEmailWorker } from "./booking-email";
 
 if (
   process.env.FIREBASE_AUTH_EMULATOR_HOST &&
@@ -287,7 +288,8 @@ class ApiController {
   ) {
     const identity = await user(authorization);
     const profile = await getAuth().getUser(identity.uid);
-    if (!(await contactPhone(identity.uid, profile.phoneNumber)))
+    const guestPhone = await contactPhone(identity.uid, profile.phoneNumber);
+    if (!guestPhone)
       throw new ForbiddenException(
         "Add a phone number starting with 09 and containing exactly 11 digits before booking.",
       );
@@ -360,8 +362,8 @@ class ApiController {
         await client.query(
           `
         INSERT INTO bookings(id,firebase_uid,room_id,check_in,check_out,guests,total_amount_minor,currency,
-          status,expires_at,idempotency_key,request_fingerprint)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PENDING_APPROVAL',now()+interval '30 minutes',$9,$10)
+          status,expires_at,idempotency_key,request_fingerprint,guest_email,guest_phone)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PENDING_APPROVAL',now()+interval '30 minutes',$9,$10,$11,$12)
         RETURNING *`,
           [
             randomUUID(),
@@ -374,6 +376,8 @@ class ApiController {
             type.currency,
             key,
             fingerprint,
+            profile.email || null,
+            guestPhone,
           ],
         )
       ).rows[0];
@@ -393,11 +397,43 @@ class ApiController {
     @Headers("authorization") authorization?: string,
   ) {
     await admin(authorization);
-    return (
-      await db.query(
-        "SELECT * FROM bookings ORDER BY created_at DESC LIMIT 200",
-      )
+    const rows = (
+      await db.query(`SELECT b.*,r.number AS room_number,t.name AS room_type,c.phone AS current_phone,e.status AS email_status,e.last_error AS email_error
+      FROM bookings b JOIN rooms r ON r.id=b.room_id JOIN room_types t ON t.id=r.room_type_id
+      LEFT JOIN customer_contacts c ON c.firebase_uid=b.firebase_uid LEFT JOIN booking_emails e ON e.booking_id=b.id
+      ORDER BY b.created_at DESC LIMIT 200`)
     ).rows;
+    const ids = [
+      ...new Set(
+        rows
+          .filter((row) => !row.guest_email || !row.guest_phone)
+          .map((row) => row.firebase_uid),
+      ),
+    ];
+    const profiles = new Map<
+      string,
+      { email?: string; phoneNumber?: string }
+    >();
+    for (let i = 0; i < ids.length; i += 100) {
+      const result = await getAuth().getUsers(
+        ids.slice(i, i + 100).map((uid) => ({ uid })),
+      );
+      for (const user of result.users) profiles.set(user.uid, user);
+    }
+    return rows.map((row) => ({
+      ...row,
+      guest_email:
+        row.guest_email || profiles.get(row.firebase_uid)?.email || null,
+      guest_phone:
+        row.guest_phone ||
+        row.current_phone ||
+        profiles.get(row.firebase_uid)?.phoneNumber ||
+        null,
+      email_status:
+        row.email_status === "PENDING" && !emailConfigured()
+          ? "NOT_CONFIGURED"
+          : row.email_status,
+    }));
   }
 
   @Patch("admin/bookings/:id") async approve(
@@ -425,8 +461,51 @@ class ApiController {
         "INSERT INTO audit_logs(actor_uid,action,booking_id) VALUES($1,$2,$3)",
         [current.uid, body.action, id],
       );
+      if (body.action === "accept")
+        await client.query(
+          "INSERT INTO booking_emails(booking_id) VALUES($1) ON CONFLICT DO NOTHING",
+          [id],
+        );
       await client.query("COMMIT");
       return result.rows[0];
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  @Post("admin/bookings/:id/email") async retryBookingEmail(
+    @Headers("authorization") authorization: string,
+    @Param("id") value: string,
+  ) {
+    const current = await admin(authorization, "bookings.manage");
+    const bookingId = id(value);
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const active = await client.query(
+        "SELECT id FROM bookings WHERE id=$1 AND status='AWAITING_PAYMENT' AND expires_at>now() FOR UPDATE",
+        [bookingId],
+      );
+      if (!active.rowCount)
+        throw new BadRequestException(
+          "Only active approved bookings can receive an approval email.",
+        );
+      const queued = await client.query(
+        `INSERT INTO booking_emails(booking_id) VALUES($1) ON CONFLICT(booking_id) DO UPDATE SET status='PENDING',attempts=0,next_attempt_at=now(),last_error=NULL,updated_at=now() WHERE booking_emails.status IN ('FAILED','SKIPPED') RETURNING *`,
+        [bookingId],
+      );
+      if (!queued.rowCount)
+        throw new BadRequestException(
+          "This email is already queued or sent. Refresh its status.",
+        );
+      await client.query(
+        "INSERT INTO audit_logs(actor_uid,action,booking_id) VALUES($1,'email.retry',$2)",
+        [current.uid, bookingId],
+      );
+      await client.query("COMMIT");
+      return { status: emailConfigured() ? "PENDING" : "NOT_CONFIGURED" };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -1001,6 +1080,7 @@ async function bootstrap() {
   app.enableCors({ origin: process.env.WEB_ORIGIN || "http://localhost:3000" });
   app.enableShutdownHooks();
   await app.listen(4000, "0.0.0.0");
+  startEmailWorker(db, (uid) => getAuth().getUser(uid));
   // Expire holds periodically; booking transactions also expire them atomically.
   const timer = setInterval(() => {
     void db

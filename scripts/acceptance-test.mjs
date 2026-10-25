@@ -108,6 +108,25 @@ try{
  await call(`admin/bookings/${first.id}`,staff,'PATCH',{action:'accept'},undefined,403);
  await call(`local-test/bookings/${first.id}/pay`,guest,'POST',undefined,undefined,409);
  await call(`admin/bookings/${first.id}`,owner,'PATCH',{action:'accept'});
+ await call(`admin/bookings/${first.id}`,owner,'PATCH',{action:'accept'},undefined,409);
+ let emailJob;
+ for(let attempt=0;attempt<60;attempt++){
+   emailJob=(await pool.query('SELECT * FROM booking_emails WHERE booking_id=$1',[first.id])).rows[0];
+   if(emailJob?.status==='TEST_SENT')break;
+   await new Promise(resolve=>setTimeout(resolve,250));
+ }
+ assert.equal(emailJob?.status,'TEST_SENT','Expected isolated test email generation.');
+ const preview=JSON.parse(emailJob.test_preview);
+ assert.equal(preview.to,'guest@wh.test');
+ assert.match(preview.text,/not a paid booking confirmation/);
+ assert.ok(preview.text.includes(first.id));
+ assert.equal((await pool.query('SELECT count(*)::integer AS count FROM booking_emails WHERE booking_id=$1',[first.id])).rows[0].count,1);
+ await call(`admin/bookings/${first.id}/email`,guest,'POST',undefined,undefined,403);
+ await call(`admin/bookings/${first.id}/email`,owner,'POST',undefined,undefined,400);
+ const enriched=(await call('admin/bookings',owner)).find(booking=>booking.id===first.id);
+ assert.equal(enriched.guest_email,'guest@wh.test');assert.equal(enriched.guest_phone,'09770000002');
+ console.log('PASS approval email queue, one job per booking, test message content and admin guest contacts');
+
  const paid=await call(`local-test/bookings/${first.id}/pay`,guest,'POST',undefined,undefined,201);
  const paidAgain=await call(`local-test/bookings/${first.id}/pay`,guest,'POST',undefined,undefined,201);
  assert.equal(paid.booking.status,'CONFIRMED');assert.equal(paid.simulated,true);assert.equal(paid.payment.id,paidAgain.payment.id);

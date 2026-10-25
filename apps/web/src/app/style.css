@@ -1647,4 +1647,37 @@ footer small {
   }
 }
 
-@media(max-width:720px){.booking-fields{grid-template-columns:minmax(0,1fr)}.booking-fields label{min-width:0}}
+@media (max-width: 720px) {
+  .booking-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .booking-fields label {
+    min-width: 0;
+  }
+}
+
+.booking-contact {
+  padding: 18px;
+  background: #f0f3ec;
+  border-radius: 9px;
+  margin: 18px 0;
+}
+.booking-contact p {
+  font-size: 14px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.booking-contact a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.email-delivery {
+  font-size: 12px;
+  padding: 12px 15px;
+  background: #faf5e9;
+  border-radius: 8px;
+  margin: 15px 0;
+}
+.email-delivery small {
+  margin-top: 6px;
+}

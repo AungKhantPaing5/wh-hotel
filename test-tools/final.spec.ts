@@ -82,6 +82,14 @@ test("customer request → owner approval → simulated payment in separate brow
   await expect(
     admin.getByText("AWAITING_PAYMENT", { exact: true }),
   ).toBeVisible();
+  await expect(admin.getByText("guest@wh.test", { exact: true })).toBeVisible();
+  await expect(admin.getByText("09770000002", { exact: true })).toBeVisible();
+  await expect(
+    admin.getByText("Test email generated — no real email sent", {
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 15000 });
+
   await page
     .getByRole("button", { name: "Refresh profile", exact: true })
     .click();
@@ -265,10 +273,17 @@ for (const viewport of [
       path: testInfo.outputPath("home.png"),
       fullPage: true,
     });
-    await page.getByRole("button",{name:"Request stay",exact:true}).first().click();
-    await expect(page.getByRole("button",{name:"Send booking request",exact:true})).toBeVisible();
-    await page.screenshot({path:testInfo.outputPath("booking.png"),fullPage:true});
-
+    await page
+      .getByRole("button", { name: "Request stay", exact: true })
+      .first()
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Send booking request", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath("booking.png"),
+      fullPage: true,
+    });
   });
 }
 
@@ -402,9 +417,13 @@ test("owner adds and renames physical rooms; guests see numbers and can open boo
     page.getByRole("form", { name: "Edit room 602", exact: true }),
   ).toBeVisible();
   await page.goto("/");
-  const deluxe=page.locator("article").filter({has:page.getByRole("heading",{name:"Deluxe Double",exact:true})});
+  const deluxe = page.locator("article").filter({
+    has: page.getByRole("heading", { name: "Deluxe Double", exact: true }),
+  });
   await expect(deluxe.locator(".room-numbers")).toContainText("602");
-  await deluxe.getByRole("button",{name:"Request stay",exact:true}).click();
+  await deluxe
+    .getByRole("button", { name: "Request stay", exact: true })
+    .click();
   const booking = page.getByRole("form", {
     name: "Request Deluxe Double",
     exact: true,
