@@ -1,10 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRef, useState } from "react";
-import {
-  signInWithEmailAndPassword,
-  signOut,
-} from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { api, auth } from "../../lib/admin-firebase";
 type Booking = {
   id: string;
@@ -30,7 +27,11 @@ type Physical = {
   active: boolean;
   room_type: string;
 };
-type Staff = { firebase_uid: string; permissions: string[] };
+type Staff = {
+  firebase_uid: string;
+  email: string | null;
+  permissions: string[];
+};
 type Payment = {
   id: string;
   booking_id: string;
@@ -51,11 +52,13 @@ function RoomEditor({
   busy,
   save,
   upload,
+  create = false,
 }: {
   room: RoomType;
   busy: boolean;
   save: (body: unknown) => void;
   upload: (file: File) => void;
+  create?: boolean;
 }) {
   const [name, setName] = useState(room.name),
     [description, setDescription] = useState(room.description);
@@ -63,13 +66,23 @@ function RoomEditor({
     [capacity, setCapacity] = useState(room.max_guests);
   const [amenities, setAmenities] = useState(room.amenities.join(", ")),
     [photos, setPhotos] = useState(room.photo_urls.join("\n"));
+  const [roomNumbers, setRoomNumbers] = useState("");
   return (
     <form
+      aria-label={create ? "Create room type" : `Edit ${room.name}`}
       className="booking editor"
       onSubmit={(e) => {
         e.preventDefault();
         save({
           name,
+          ...(create
+            ? {
+                roomNumbers: roomNumbers
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+              }
+            : {}),
           description,
           maxGuests: capacity,
           nightlyAmountMinor: price,
@@ -84,7 +97,19 @@ function RoomEditor({
         });
       }}
     >
-      <h3>{room.name}</h3>
+      <h3>{create ? "Create room type" : room.name}</h3>
+      {create && (
+        <label>
+          Room numbers, comma separated
+          <input
+            aria-label="New room numbers"
+            required
+            placeholder="401, 402, 403"
+            value={roomNumbers}
+            onChange={(e) => setRoomNumbers(e.target.value)}
+          />
+        </label>
+      )}
       <label>
         Name
         <input
@@ -128,22 +153,78 @@ function RoomEditor({
           onChange={(e) => setAmenities(e.target.value)}
         />
       </label>
-      <label>Upload room photo
-        <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || room.photo_urls.length >= 8}
-          onChange={event => { const file = event.target.files?.[0]; if (file) upload(file); event.target.value = ""; }} />
-      </label>
-      <p>JPEG, PNG or WebP, up to 5 MiB and 20 megapixels. Maximum 8 photos. Upload saves immediately; save any other edits first.</p>
-      <div className="row">{room.photo_urls.map(url => <div key={url}><img src={url} alt={room.name} style={{width:120,height:90,objectFit:"cover",borderRadius:8}} />
-        <button type="button" className="secondary" disabled={busy} onClick={() => { const next=photos.split("\n").filter(p => p.trim() && p.trim() !== url); setPhotos(next.join("\n")); }}>Remove from selection</button>
-      </div>)}</div>
-      <details><summary>Advanced: photo addresses / selected photos</summary>
-        <textarea aria-label="Photo addresses" value={photos} onChange={(e) => setPhotos(e.target.value)} />
-      </details>
+      {!create && (
+        <>
+          {" "}
+          <label>
+            Upload room photo
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={busy || room.photo_urls.length >= 8}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) upload(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          <p>
+            JPEG, PNG or WebP, up to 5 MiB and 20 megapixels. Maximum 8 photos.
+            Upload saves immediately; save any other edits first.
+          </p>
+          <div className="row">
+            {room.photo_urls.map((url) => (
+              <div key={url}>
+                <img
+                  src={url}
+                  alt={room.name}
+                  style={{
+                    width: 120,
+                    height: 90,
+                    objectFit: "cover",
+                    borderRadius: 8,
+                  }}
+                />
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    const next = photos
+                      .split("\n")
+                      .filter((p) => p.trim() && p.trim() !== url);
+                    setPhotos(next.join("\n"));
+                  }}
+                >
+                  Remove from selection
+                </button>
+              </div>
+            ))}
+          </div>
+          <details>
+            <summary>Advanced: photo addresses / selected photos</summary>
+            <textarea
+              aria-label="Photo addresses"
+              value={photos}
+              onChange={(e) => setPhotos(e.target.value)}
+            />
+          </details>
+        </>
+      )}
+      {create && (
+        <p>
+          Create the room type first, then upload photos using its editor below.
+        </p>
+      )}
       <p>
         Changes affect new bookings. Existing booking totals remain unchanged.
-        Uploaded images are stored on this hotel server. Removing a photo from selection takes effect after Save room type.
+        Uploaded images are stored on this hotel server. Removing a photo from
+        selection takes effect after Save room type.
       </p>
-      <button disabled={busy}>Save room type</button>
+      <button disabled={busy}>
+        {create ? "Create room type" : "Save room type"}
+      </button>
     </form>
   );
 }
@@ -164,7 +245,7 @@ export default function Admin() {
     [busy, setBusy] = useState(false);
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
-  const [staffUid, setStaffUid] = useState(""),
+  const [staffEmail, setStaffEmail] = useState(""),
     [selectedPermissions, setSelectedPermissions] = useState<string[]>([
       "bookings.read",
       "payments.read",
@@ -188,10 +269,16 @@ export default function Admin() {
     }
   }
   async function load() {
-    if (!signedInHere.current) throw new Error("Enter your admin email and password first.");
+    if (!signedInHere.current)
+      throw new Error("Enter your admin email and password first.");
     await auth().authStateReady();
     const p = await api("me", {}, true);
-    if (!p.isOwner && !availablePermissions.some(permission => p.permissions.includes(permission))) {
+    if (
+      !p.isOwner &&
+      !availablePermissions.some((permission) =>
+        p.permissions.includes(permission),
+      )
+    ) {
       signedInHere.current = false;
       setProfile(null);
       await signOut(auth());
@@ -256,70 +343,78 @@ export default function Admin() {
             money.
           </div>
         )}
-        {!profile && <form
-          className="row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              signedInHere.current = false;
-              try {
-                await signInWithEmailAndPassword(auth(), email.trim(), password);
-                signedInHere.current = true;
-                await load();
-              } catch (error) {
-                signedInHere.current = false;
-                setProfile(null);
-                await signOut(auth());
-                throw error;
-              } finally {
-                setPassword("");
-              }
-            });
-          }}
-        >
-          <input
-            aria-label="Admin email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            placeholder="Admin email"
-            autoComplete="username"
-          />
-          <input
-            aria-label="Admin password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            placeholder="Password"
-            autoComplete="current-password"
-          />
-          <button disabled={busy}>Email sign in</button>
-        </form>}
-        {profile && <div className="row">
-          <button disabled={busy} onClick={() => void run(load)}>
-            Load / refresh dashboard
-          </button>
-          <button
-            disabled={busy}
-            onClick={() =>
+        {!profile && (
+          <form
+            className="row"
+            onSubmit={(e) => {
+              e.preventDefault();
               void run(async () => {
                 signedInHere.current = false;
-                await signOut(auth());
-                setProfile(null);
-                setRows([]);
-                setTypes([]);
-                setRooms([]);
-                setStaff([]);
-                setPayments([]);
-                setCalendar([]);
-              })
-            }
+                try {
+                  await signInWithEmailAndPassword(
+                    auth(),
+                    email.trim(),
+                    password,
+                  );
+                  signedInHere.current = true;
+                  await load();
+                } catch (error) {
+                  signedInHere.current = false;
+                  setProfile(null);
+                  await signOut(auth());
+                  throw error;
+                } finally {
+                  setPassword("");
+                }
+              });
+            }}
           >
-            Sign out
-          </button>
-        </div>}
+            <input
+              aria-label="Admin email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="Admin email"
+              autoComplete="username"
+            />
+            <input
+              aria-label="Admin password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              placeholder="Password"
+              autoComplete="current-password"
+            />
+            <button disabled={busy}>Email sign in</button>
+          </form>
+        )}
+        {profile && (
+          <div className="row">
+            <button disabled={busy} onClick={() => void run(load)}>
+              Load / refresh dashboard
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  signedInHere.current = false;
+                  await signOut(auth());
+                  setProfile(null);
+                  setRows([]);
+                  setTypes([]);
+                  setRooms([]);
+                  setStaff([]);
+                  setPayments([]);
+                  setCalendar([]);
+                })
+              }
+            >
+              Sign out
+            </button>
+          </div>
+        )}
         <p role="status">{message}</p>
         {profile && (
           <>
@@ -391,23 +486,79 @@ export default function Admin() {
               profile.permissions.includes("rooms.manage") && (
                 <section>
                   <h2>Room types and rates</h2>
+                  <details>
+                    <summary>Create a new room type</summary>
+                    <RoomEditor
+                      create
+                      key={types.length}
+                      room={{
+                        id: 0,
+                        name: "",
+                        description: "",
+                        max_guests: 2,
+                        nightly_amount_minor: "0",
+                        amenities: [],
+                        photo_urls: [],
+                      }}
+                      busy={busy}
+                      upload={() => {}}
+                      save={(body) =>
+                        void run(async () => {
+                          await api(
+                            "admin/room-types",
+                            { method: "POST", body: JSON.stringify(body) },
+                            true,
+                          );
+                          await load();
+                          setMessage(
+                            "Room type and room inventory created. You can now upload photos below.",
+                          );
+                        })
+                      }
+                    />
+                  </details>
                   <div className="grid">
                     {types.map((room) => (
                       <RoomEditor
                         key={JSON.stringify(room)}
                         room={room}
                         busy={busy}
-                        upload={file => void run(async () => {
-                          if (!["image/jpeg","image/png","image/webp"].includes(file.type) || file.size > 5 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image up to 5 MiB.");
-                          const data = await new Promise<string>((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onerror = () => reject(new Error("Cannot read this photo."));
-                            reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
-                            reader.readAsDataURL(file);
-                          });
-                          await api(`admin/room-types/${room.id}/photos`, {method:"POST",body:JSON.stringify({data})}, true);
-                          await load();
-                        })}
+                        upload={(file) =>
+                          void run(async () => {
+                            if (
+                              ![
+                                "image/jpeg",
+                                "image/png",
+                                "image/webp",
+                              ].includes(file.type) ||
+                              file.size > 5 * 1024 * 1024
+                            )
+                              throw new Error(
+                                "Choose a JPEG, PNG or WebP image up to 5 MiB.",
+                              );
+                            const data = await new Promise<string>(
+                              (resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onerror = () =>
+                                  reject(new Error("Cannot read this photo."));
+                                reader.onload = () =>
+                                  resolve(
+                                    String(reader.result).split(",")[1] || "",
+                                  );
+                                reader.readAsDataURL(file);
+                              },
+                            );
+                            await api(
+                              `admin/room-types/${room.id}/photos`,
+                              {
+                                method: "POST",
+                                body: JSON.stringify({ data }),
+                              },
+                              true,
+                            );
+                            await load();
+                          })
+                        }
                         save={(body) =>
                           void run(async () => {
                             await api(
@@ -521,8 +672,9 @@ export default function Admin() {
               <section>
                 <h2>Staff permissions</h2>
                 <p>
-                  Use an existing Firebase user UID. Revoking permissions
-                  removes admin access, not the customer account.
+                  Enter the email of an existing account. The staff member must
+                  sign up first. Revoking permissions removes admin access, not
+                  the customer account.
                 </p>
                 <form
                   className="editor booking"
@@ -534,7 +686,7 @@ export default function Admin() {
                         {
                           method: "POST",
                           body: JSON.stringify({
-                            uid: staffUid,
+                            email: staffEmail,
                             permissions: selectedPermissions,
                           }),
                         },
@@ -545,12 +697,13 @@ export default function Admin() {
                   }}
                 >
                   <input
-                    aria-label="Staff UID"
+                    aria-label="Staff email"
+                    type="email"
                     required
-                    value={staffUid}
-                    onChange={(e) => setStaffUid(e.target.value)}
+                    value={staffEmail}
+                    onChange={(e) => setStaffEmail(e.target.value)}
                     placeholder={
-                      localTest ? "wh-test-staff" : "Firebase user UID"
+                      localTest ? "staff@wh.test" : "staff@example.com"
                     }
                   />
                   {availablePermissions.map((p) => (
@@ -573,7 +726,9 @@ export default function Admin() {
                 </form>
                 {staff.map((member) => (
                   <div className="booking" key={member.firebase_uid}>
-                    <strong>{member.firebase_uid}</strong>
+                    <strong>
+                      {member.email || "Account email unavailable"}
+                    </strong>
                     <p>{member.permissions.join(", ") || "No permissions"}</p>
                     <button
                       disabled={busy}

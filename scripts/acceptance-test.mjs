@@ -47,7 +47,22 @@ try{
  await pool.query('DELETE FROM customer_contacts WHERE firebase_uid=$1',[contact.uid]);
  console.log('PASS required phone format validation, authenticated persistence and UID isolation without SMS');
 
- await call('admin/staff',owner,'POST',{uid:'wh-test-staff',permissions:['bookings.read','payments.read']},undefined,201);
+ const newTypeBody={name:'Acceptance Garden Room',description:'A room created by the hotel.',maxGuests:2,nightlyAmountMinor:'7500000',amenities:['Wi-Fi'],photoUrls:[],roomNumbers:['acceptance-501','acceptance-502']};
+ await call('admin/room-types',guest,'POST',newTypeBody,undefined,403);
+ await call('admin/room-types',staff,'POST',newTypeBody,undefined,403);
+ await call('admin/room-types',owner,'POST',{...newTypeBody,maxGuests:0},undefined,400);
+ const createdType=await call('admin/room-types',owner,'POST',newTypeBody,undefined,201);
+ assert.equal((await pool.query('SELECT count(*)::integer AS count FROM rooms WHERE room_type_id=$1',[createdType.id])).rows[0].count,2);
+ const countBefore=(await call('admin/room-types',owner)).length;
+ await call('admin/room-types',owner,'POST',newTypeBody,undefined,400);
+ assert.equal((await call('admin/room-types',owner)).length,countBefore,'Duplicate inventory must roll back the new category.');
+ await pool.query('DELETE FROM rooms WHERE room_type_id=$1',[createdType.id]);
+ await pool.query('DELETE FROM room_types WHERE id=$1',[createdType.id]);
+ await call('admin/staff',staff,'POST',{email:'guest@wh.test',permissions:['rooms.manage']},undefined,403);
+ await call('admin/staff',owner,'POST',{email:'missing@wh.test',permissions:[]},undefined,404);
+ await call('admin/staff',owner,'POST',{email:'admin@wh.test',permissions:[]},undefined,400);
+ console.log('PASS room-type creation with inventory, duplicate rollback and email-based staff authorization');
+ await call('admin/staff',owner,'POST',{email:'staff@wh.test',permissions:['bookings.read','payments.read']},undefined,201);
  await call('admin/bookings',staff);await call('admin/payments',staff);
  await call(`admin/room-types/${original.id}`,staff,'PATCH',{},undefined,403);
  const edit={name:original.name,description:original.description,maxGuests:original.max_guests,nightlyAmountMinor:'9900000',amenities:original.amenities,photoUrls:[]};
@@ -104,7 +119,7 @@ try{
  if(owner&&original){
   await call(`admin/room-types/${original.id}`,owner,'PATCH',{name:original.name,description:original.description,maxGuests:original.max_guests,nightlyAmountMinor:String(original.nightly_amount_minor),amenities:original.amenities,photoUrls:original.photo_urls});
   for(const room of physical||[])await call(`admin/rooms/${room.id}`,owner,'PATCH',{active:room.active});
-  if(originalStaff)await call('admin/staff',owner,'POST',{uid:originalStaff.firebase_uid,permissions:originalStaff.permissions},undefined,201);
+  if(originalStaff)await call('admin/staff',owner,'POST',{email:originalStaff.email,permissions:originalStaff.permissions},undefined,201);
   else await call('admin/staff/wh-test-staff',owner,'DELETE');
   await pool.query('DELETE FROM payment_transactions WHERE booking_id IN (SELECT id FROM bookings WHERE firebase_uid=$1)', ['wh-test-guest']);
   await pool.query('DELETE FROM audit_logs WHERE booking_id IN (SELECT id FROM bookings WHERE firebase_uid=$1)', ['wh-test-guest']);

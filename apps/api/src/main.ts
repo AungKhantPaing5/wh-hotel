@@ -77,6 +77,62 @@ async function contactPhone(
   return local && /^09[0-9]{9}$/.test(local) ? local : null;
 }
 
+function roomDetails(body: Record<string, unknown>) {
+  const {
+    name,
+    description,
+    maxGuests,
+    nightlyAmountMinor,
+    amenities,
+    photoUrls,
+  } = body;
+  if (
+    typeof name !== "string" ||
+    !name.trim() ||
+    name.length > 120 ||
+    typeof description !== "string" ||
+    description.length > 3000 ||
+    !Number.isInteger(maxGuests) ||
+    Number(maxGuests) < 1 ||
+    Number(maxGuests) > 4 ||
+    typeof nightlyAmountMinor !== "string" ||
+    !/^(0|[1-9][0-9]{0,15})$/.test(nightlyAmountMinor) ||
+    !Array.isArray(amenities) ||
+    amenities.length > 30 ||
+    amenities.some(
+      (a) => typeof a !== "string" || !a.trim() || a.length > 80,
+    ) ||
+    !Array.isArray(photoUrls) ||
+    photoUrls.length > 8 ||
+    photoUrls.some((url) => {
+      if (managedPhoto(url)) return false;
+      try {
+        const u = new URL(String(url));
+        return (
+          typeof url !== "string" ||
+          u.protocol !== "https:" ||
+          !!u.username ||
+          !!u.password ||
+          url.length > 2000
+        );
+      } catch {
+        return true;
+      }
+    })
+  )
+    throw new BadRequestException(
+      "Invalid room details. Use HTTPS photo URLs and integer minor-unit prices.",
+    );
+  return {
+    name,
+    description,
+    maxGuests,
+    nightlyAmountMinor,
+    amenities,
+    photoUrls,
+  };
+}
+
 const permissions = [
   "bookings.read",
   "bookings.manage",
@@ -188,7 +244,11 @@ class ApiController {
     @Body() body: { phone?: unknown },
   ) {
     const identity = await user(authorization);
-    if (typeof body.phone !== "string" || body.phone.length !== 11 || !/^09[0-9]{9}$/.test(body.phone))
+    if (
+      typeof body.phone !== "string" ||
+      body.phone.length !== 11 ||
+      !/^09[0-9]{9}$/.test(body.phone)
+    )
       throw new BadRequestException(
         "Phone number must start with 09 and contain exactly 11 digits.",
       );
@@ -378,6 +438,78 @@ class ApiController {
     await admin(authorization, "rooms.manage");
     return (await db.query("SELECT * FROM room_types ORDER BY id")).rows;
   }
+  @Post("admin/room-types") async createType(
+    @Headers("authorization") authorization: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const current = await admin(authorization, "rooms.manage");
+    const {
+      name,
+      description,
+      maxGuests,
+      nightlyAmountMinor,
+      amenities,
+      photoUrls,
+    } = roomDetails(body);
+    const numbers = body.roomNumbers;
+    if (
+      !Array.isArray(numbers) ||
+      numbers.length < 1 ||
+      numbers.length > 100 ||
+      numbers.some(
+        (number) =>
+          typeof number !== "string" || !number.trim() || number.length > 40,
+      ) ||
+      new Set(numbers.map((number) => String(number).trim())).size !==
+        numbers.length
+    )
+      throw new BadRequestException(
+        "Enter 1–100 unique room numbers, each up to 40 characters.",
+      );
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const room = (
+        await client.query(
+          `INSERT INTO room_types(name,description,max_guests,nightly_amount_minor,amenities,photo_urls)
+        VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [
+            name.trim(),
+            description,
+            maxGuests,
+            nightlyAmountMinor,
+            amenities,
+            photoUrls,
+          ],
+        )
+      ).rows[0];
+      for (const number of numbers)
+        await client.query(
+          "INSERT INTO rooms(room_type_id,number) VALUES($1,$2)",
+          [room.id, String(number).trim()],
+        );
+      await client.query(
+        "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
+        [
+          current.uid,
+          "room-type.create",
+          JSON.stringify({ typeId: room.id, roomNumbers: numbers }),
+        ],
+      );
+      await client.query("COMMIT");
+      return room;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if ((error as { code?: string }).code === "23505")
+        throw new BadRequestException(
+          "A room number already exists. Use different room numbers.",
+        );
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   @Patch("admin/room-types/:id") async editType(
     @Headers("authorization") authorization: string,
     @Param("id") value: string,
@@ -394,44 +526,7 @@ class ApiController {
       nightlyAmountMinor,
       amenities,
       photoUrls,
-    } = body;
-    if (
-      typeof name !== "string" ||
-      !name.trim() ||
-      name.length > 120 ||
-      typeof description !== "string" ||
-      description.length > 3000 ||
-      !Number.isInteger(maxGuests) ||
-      Number(maxGuests) < 1 ||
-      Number(maxGuests) > 4 ||
-      typeof nightlyAmountMinor !== "string" ||
-      !/^(0|[1-9][0-9]{0,15})$/.test(nightlyAmountMinor) ||
-      !Array.isArray(amenities) ||
-      amenities.length > 30 ||
-      amenities.some(
-        (a) => typeof a !== "string" || !a.trim() || a.length > 80,
-      ) ||
-      !Array.isArray(photoUrls) ||
-      photoUrls.length > 8 ||
-      photoUrls.some((url) => {
-        if (managedPhoto(url)) return false;
-        try {
-          const u = new URL(String(url));
-          return (
-            typeof url !== "string" ||
-            u.protocol !== "https:" ||
-            !!u.username ||
-            !!u.password ||
-            url.length > 2000
-          );
-        } catch {
-          return true;
-        }
-      })
-    )
-      throw new BadRequestException(
-        "Invalid room details. Use HTTPS photo URLs and integer minor-unit prices.",
-      );
+    } = roomDetails(body);
     const client = await db.connect();
     try {
       await client.query("BEGIN");
@@ -633,46 +728,81 @@ class ApiController {
     @Headers("authorization") authorization?: string,
   ) {
     await owner(authorization);
-    return (
+    const rows = (
       await db.query("SELECT * FROM staff_permissions ORDER BY firebase_uid")
     ).rows;
+    const emails = new Map<string, string | undefined>();
+    for (let start = 0; start < rows.length; start += 100) {
+      const result = await getAuth().getUsers(
+        rows
+          .slice(start, start + 100)
+          .map((row) => ({ uid: row.firebase_uid })),
+      );
+      for (const user of result.users) emails.set(user.uid, user.email);
+    }
+    return rows.map((row) => ({
+      ...row,
+      email: emails.get(row.firebase_uid) || null,
+    }));
   }
   @Post("admin/staff") async setStaff(
     @Headers("authorization") authorization: string,
-    @Body() body: { uid?: unknown; permissions?: unknown },
+    @Body() body: { email?: unknown; permissions?: unknown },
   ) {
     const current = await owner(authorization);
     if (
-      typeof body.uid !== "string" ||
-      body.uid.length > 128 ||
-      isOwner(body.uid) ||
+      typeof body.email !== "string" ||
+      body.email.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim()) ||
       !Array.isArray(body.permissions) ||
       body.permissions.some((p) => !permissions.includes(p))
     )
       throw new BadRequestException(
-        "Use an existing non-owner Firebase UID and valid permissions.",
+        "Enter an existing account email and valid permissions.",
       );
-    await getAuth().getUser(body.uid);
+    let staffUser;
+    try {
+      staffUser = await getAuth().getUserByEmail(
+        body.email.trim().toLowerCase(),
+      );
+    } catch (error) {
+      if ((error as { code?: string }).code === "auth/user-not-found")
+        throw new NotFoundException(
+          "No account found for this email. Ask the staff member to sign up first.",
+        );
+      throw error;
+    }
+    if (staffUser.disabled || isOwner(staffUser.uid))
+      throw new BadRequestException("Choose an active non-owner account.");
     const client = await db.connect();
     try {
       await client.query("BEGIN");
       await client.query(
         "INSERT INTO staff_permissions(firebase_uid,permissions) VALUES($1,$2) ON CONFLICT(firebase_uid) DO UPDATE SET permissions=$2,updated_at=now()",
-        [body.uid, [...new Set(body.permissions)]],
+        [staffUser.uid, [...new Set(body.permissions)]],
       );
       await client.query(
         "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
-        [current.uid, "staff.permissions", JSON.stringify(body)],
+        [
+          current.uid,
+          "staff.permissions",
+          JSON.stringify({
+            uid: staffUser.uid,
+            email: staffUser.email,
+            permissions: body.permissions,
+          }),
+        ],
       );
       await client.query("COMMIT");
-      return { status: "saved" };
-    } catch (e) {
+      return { status: "saved", email: staffUser.email };
+    } catch (error) {
       await client.query("ROLLBACK");
-      throw e;
+      throw error;
     } finally {
       client.release();
     }
   }
+
   @Delete("admin/staff/:uid") async removeStaff(
     @Headers("authorization") authorization: string,
     @Param("uid") uid: string,

@@ -315,3 +315,52 @@ test("signup requires a valid local phone number without SMS and persists after 
     page.getByRole("button", { name: "Login", exact: true }),
   ).toBeVisible();
 });
+
+test("owner creates room categories and grants staff permissions by email", async ({
+  page,
+}) => {
+  await page.goto("/admin");
+  await page.getByLabel("Admin email").fill("admin@wh.test");
+  await page.getByLabel("Admin password").fill("WhTestOnly2026!");
+  await page
+    .getByRole("button", { name: "Email sign in", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Rooms", exact: true }).click();
+  await page.getByText("Create a new room type", { exact: true }).click();
+  const form = page.getByRole("form", {
+    name: "Create room type",
+    exact: true,
+  });
+  await form.getByLabel("Name", { exact: true }).fill("Garden Room");
+  await form
+    .getByLabel("Description", { exact: true })
+    .fill("A quiet garden room.");
+  await form
+    .getByLabel("New room numbers", { exact: true })
+    .fill("garden-501, garden-502");
+  await form
+    .getByLabel("Price in minor units (85,000 MMK = 8500000)")
+    .fill("6500000");
+  await form
+    .getByRole("button", { name: "Create room type", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Garden Room", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("garden-501 · Garden Room · Available for sale", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Staff", exact: true }).click();
+  await expect(page.getByLabel("Staff UID", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Staff email", { exact: true }).fill("staff@wh.test");
+  await page
+    .getByRole("button", { name: "Save permissions", exact: true })
+    .click();
+  await expect(page.getByText("staff@wh.test", { exact: true })).toBeVisible();
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Garden Room", exact: true }),
+  ).toBeVisible();
+});
