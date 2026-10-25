@@ -88,3 +88,20 @@ test('admin requires explicit credentials and stays separate from the customer s
  await expect(page.getByLabel('Admin password')).toBeVisible();
  await expect(page.getByRole('heading',{name:'Booking requests',exact:true})).toHaveCount(0);
 });
+
+for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
+ test(`My account reveals and focuses the login form at ${viewport.width}px`, async ({page}) => {
+   await page.setViewportSize(viewport);
+   await page.goto('/');
+   const button=page.getByRole('button',{name:'My account',exact:true});
+   await expect(button).toHaveAttribute('aria-expanded','false');
+   await button.click();
+   await expect(button).toHaveAttribute('aria-expanded','true');
+   const panel=page.getByRole('region',{name:'Your WN account',exact:true});
+   await expect(panel).toBeFocused();
+   await expect(page.getByRole('heading',{name:'Your WN account',exact:true})).toBeInViewport();
+   await expect(page.getByLabel('Login email',{exact:true})).toBeInViewport();
+   await button.click();
+   await expect(panel).toHaveCount(0);
+ });
+}

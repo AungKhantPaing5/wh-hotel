@@ -45,6 +45,7 @@ export default function Home() {
   const [guests, setGuests] = useState(2);
   const [message, setMessage] = useState("");
   const [account, setAccount] = useState(false);
+  const accountPanel = useRef<HTMLElement | null>(null);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [email, setEmail] = useState("");
@@ -65,6 +66,12 @@ export default function Home() {
       .then(setRooms)
       .catch((e) => setMessage(e.message));
   }, []);
+  useEffect(() => {
+    if (account && accountPanel.current) {
+      accountPanel.current.focus({ preventScroll: true });
+      accountPanel.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [account]);
   async function task(fn: () => Promise<void>) {
     setBusy(true);
     setMessage("");
@@ -153,6 +160,9 @@ export default function Home() {
         <nav>
           <a href="#rooms">Our rooms</a>
           <button
+            type="button"
+            aria-expanded={account}
+            aria-controls="account-panel"
             onClick={() => {
               setAccount(!account);
               void task(async () => {
@@ -232,12 +242,14 @@ export default function Home() {
           </label>
           <button disabled={busy}>Check availability</button>
         </form>
-        <div role="status" className={message ? "notice" : ""}>
+        {!account && <div role="status" className={message ? "notice" : ""}>
           {message}
-        </div>
+        </div>}
         {account && (
-          <section className="account">
-            <h2>Your WN account</h2>
+          <section id="account-panel" ref={accountPanel} tabIndex={-1}
+            aria-labelledby="account-heading" className="account">
+            <h2 id="account-heading">Your WN account</h2>
+            <div role="status" className={message ? "notice" : ""}>{message}</div>
             <p>Sign in, verify your phone, and manage your booking requests.</p>
             <div className="row">
               <button
