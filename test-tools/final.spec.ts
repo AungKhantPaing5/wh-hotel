@@ -64,7 +64,11 @@ test("customer request → owner approval → simulated payment in separate brow
     .getByRole("button", { name: "Request stay", exact: true })
     .first()
     .click();
+  await page
+    .getByRole("button", { name: "Send booking request", exact: true })
+    .click();
   await expect(page.getByRole("status")).toContainText("PENDING_APPROVAL");
+  await expect(page.locator(".assigned-room").first()).toContainText("Room ");
   await admin.goto("/admin");
   await admin.getByLabel("Admin email").fill("admin@wh.test");
   await admin.getByLabel("Admin password").fill("WhTestOnly2026!");
@@ -363,4 +367,67 @@ test("owner creates room categories and grants staff permissions by email", asyn
   await expect(
     page.getByRole("heading", { name: "Garden Room", exact: true }),
   ).toBeVisible();
+});
+
+test("owner adds and renames physical rooms; guests see numbers and can open booking without prior dates", async ({
+  page,
+}) => {
+  await page.goto("/admin");
+  await page.getByLabel("Admin email").fill("admin@wh.test");
+  await page.getByLabel("Admin password").fill("WhTestOnly2026!");
+  await page
+    .getByRole("button", { name: "Email sign in", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Rooms", exact: true }).click();
+  await page
+    .getByLabel("New physical room type", { exact: true })
+    .selectOption({ label: "Deluxe Double" });
+  await page
+    .getByLabel("New physical room number", { exact: true })
+    .fill("601");
+  await page
+    .getByRole("button", { name: "Add physical room", exact: true })
+    .click();
+  const form = page.getByRole("form", { name: "Edit room 601", exact: true });
+  await expect(form).toBeVisible();
+  await form.getByLabel("Room number 601", { exact: true }).fill("602");
+  await form
+    .getByRole("button", { name: "Save room number", exact: true })
+    .click();
+  await expect(
+    page.getByRole("form", { name: "Edit room 602", exact: true }),
+  ).toBeVisible();
+  await page.goto("/");
+  await expect(page.locator(".room-numbers").first()).toContainText("602");
+  await page
+    .getByRole("button", { name: "Request stay", exact: true })
+    .first()
+    .click();
+  const booking = page.getByRole("form", {
+    name: "Request Deluxe Double",
+    exact: true,
+  });
+  await expect(booking).toBeVisible();
+  await expect(
+    booking.getByLabel("Stay check-in", { exact: true }),
+  ).toBeFocused();
+  await booking
+    .getByRole("button", { name: "Send booking request", exact: true })
+    .click();
+  await expect(
+    booking.getByLabel("Stay check-in", { exact: true }),
+  ).toBeFocused();
+  const checkIn = new Date(Date.now() + 12 * 86400000)
+      .toISOString()
+      .slice(0, 10),
+    checkOut = new Date(Date.now() + 13 * 86400000).toISOString().slice(0, 10);
+  await booking.getByLabel("Stay check-in", { exact: true }).fill(checkIn);
+  await booking.getByLabel("Stay check-out", { exact: true }).fill(checkOut);
+  await booking
+    .getByRole("button", { name: "Send booking request", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("status")).toContainText(
+    "Sign in",
+  );
 });

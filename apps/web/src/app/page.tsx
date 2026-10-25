@@ -23,6 +23,7 @@ type Room = {
   amenities: string[];
   photo_urls?: string[];
   available_rooms?: number;
+  room_numbers?: string[];
 };
 type Booking = {
   id: string;
@@ -30,6 +31,8 @@ type Booking = {
   check_in: string;
   check_out: string;
   total_amount_minor: string;
+  room_number?: string;
+  room_type?: string;
 };
 type Profile = {
   uid: string;
@@ -82,6 +85,10 @@ function Icon({ name }: { name: "arrow" | "close" | "eye" | "mail" | "user" }) {
   );
 }
 export default function Home() {
+  const [bookingRoom, setBookingRoom] = useState<number | null>(null),
+    [bookingMessage, setBookingMessage] = useState("");
+  const bookingPanel = useRef<HTMLFormElement | null>(null);
+
   const [rooms, setRooms] = useState<Room[]>([]),
     [loadingRooms, setLoadingRooms] = useState(true);
   const [checkIn, setCheckIn] = useState(""),
@@ -105,6 +112,17 @@ export default function Home() {
     accountPanel = useRef<HTMLElement | null>(null);
   const request = useRef<{ fingerprint: string; key: string } | null>(null);
   const initiator = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (bookingRoom !== null && !authView) {
+      bookingPanel.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      bookingPanel.current
+        ?.querySelector<HTMLInputElement>("input")
+        ?.focus({ preventScroll: true });
+    }
+  }, [bookingRoom, authView]);
 
   useEffect(() => {
     api("rooms")
@@ -238,7 +256,7 @@ export default function Home() {
       return;
     }
     closeAuth();
-    setAccount(true);
+    setAccount(bookingRoom === null);
   }
   async function submitEmail() {
     if (authView === "reset") {
@@ -310,12 +328,15 @@ export default function Home() {
     const currentUid = auth().currentUser?.uid;
     if (!currentUid) {
       openAuth("login");
-      return;
+      setAuthMessage(
+        "Sign in, then return to your room to send this booking request.",
+      );
+      return false;
     }
     if ((await api("me", {}, true)).needsPhone) {
       openAuth("contact");
       setAuthMessage("Add your phone number before requesting a stay.");
-      return;
+      return false;
     }
     const body = { roomTypeId: room.id, checkIn, checkOut, guests };
     const fingerprint = JSON.stringify([currentUid, body]),
@@ -357,6 +378,7 @@ export default function Home() {
     setMessage(
       `Request ${result.id} received. Status: ${result.status}. The hotel will review your request.`,
     );
+    return true;
   }
   const phoneMode = authView === "contact";
   const authTitle =
@@ -629,6 +651,11 @@ export default function Home() {
                 <div className="booking guest-booking" key={b.id}>
                   <div>
                     <span className="booking-status">{b.status}</span>
+                    {b.room_number && (
+                      <h3 className="assigned-room">
+                        Room {b.room_number} · {b.room_type}
+                      </h3>
+                    )}
                     <p>
                       {String(b.check_in).slice(0, 10)}{" "}
                       <span aria-hidden="true">—</span>{" "}
@@ -713,6 +740,13 @@ export default function Home() {
                         <span key={a}>{a}</span>
                       ))}
                     </div>
+                    <div className="room-numbers">
+                      <span>ROOM NUMBERS</span>
+                      <strong>
+                        {room.room_numbers?.join(" · ") ||
+                          "Contact the hotel for room details"}
+                      </strong>
+                    </div>
                     {room.available_rooms !== undefined && (
                       <p className="availability">
                         {room.available_rooms === 0
@@ -727,16 +761,116 @@ export default function Home() {
                         <small>per night · rate subject to your dates</small>
                       </div>
                       <button
-                        disabled={
-                          busy ||
-                          guests > room.max_guests ||
-                          room.available_rooms === 0
-                        }
-                        onClick={() => void task(() => book(room))}
+                        disabled={busy}
+                        aria-expanded={bookingRoom === room.id}
+                        onClick={() => {
+                          setBookingMessage("");
+                          setBookingRoom(room.id);
+                          setGuests(Math.min(guests, room.max_guests));
+                        }}
                       >
                         Request stay <Icon name="arrow" />
                       </button>
                     </div>
+                    {bookingRoom === room.id && (
+                      <form
+                        ref={bookingPanel}
+                        className="booking-inline"
+                        aria-label={`Request ${room.name}`}
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          if (busy) return;
+                          setBusy(true);
+                          setBookingMessage("");
+                          void book(room)
+                            .then((done) => {
+                              if (done) setBookingRoom(null);
+                            })
+                            .catch((error) => setBookingMessage(error.message))
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        <div className="booking-panel-heading">
+                          <div>
+                            <div className="eyebrow">YOUR NEXT STAY</div>
+                            <h3>Make it a date.</h3>
+                          </div>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => setBookingRoom(null)}
+                            aria-label="Close booking form"
+                          >
+                            <Icon name="close" />
+                          </button>
+                        </div>
+                        <p>
+                          Choose your dates and send a request for {room.name}.
+                        </p>
+                        <div className="booking-fields">
+                          <label>
+                            Check-in
+                            <input
+                              aria-label="Stay check-in"
+                              type="date"
+                              required
+                              min={today()}
+                              value={checkIn}
+                              onChange={(event) =>
+                                setCheckIn(event.target.value)
+                              }
+                            />
+                          </label>
+                          <label>
+                            Check-out
+                            <input
+                              aria-label="Stay check-out"
+                              type="date"
+                              required
+                              min={checkIn || today()}
+                              value={checkOut}
+                              onChange={(event) =>
+                                setCheckOut(event.target.value)
+                              }
+                            />
+                          </label>
+                          <label>
+                            Guests
+                            <select
+                              aria-label="Stay guests"
+                              value={guests}
+                              onChange={(event) =>
+                                setGuests(Number(event.target.value))
+                              }
+                            >
+                              {Array.from(
+                                { length: room.max_guests },
+                                (_, i) => (
+                                  <option key={i} value={i + 1}>
+                                    {i + 1}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                          </label>
+                        </div>
+                        <div
+                          role="alert"
+                          className={bookingMessage ? "booking-error" : ""}
+                        >
+                          {bookingMessage}
+                        </div>
+                        <small>
+                          Your room number is allocated based on availability
+                          and shown in My bookings. The hotel reviews your
+                          request before confirmation.
+                        </small>
+                        <button className="booking-submit" disabled={busy}>
+                          {busy ? "Sending…" : "Send booking request"}
+                          <Icon name="arrow" />
+                        </button>
+                      </form>
+                    )}
                   </div>
                 </article>
               ))

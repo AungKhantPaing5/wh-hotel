@@ -228,6 +228,53 @@ function RoomEditor({
     </form>
   );
 }
+function PhysicalRoomEditor({
+  room,
+  busy,
+  save,
+}: {
+  room: Physical;
+  busy: boolean;
+  save: (body: unknown) => void;
+}) {
+  const [number, setNumber] = useState(room.number);
+  return (
+    <form
+      className="booking physical-editor"
+      aria-label={`Edit room ${room.number}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save({ number });
+      }}
+    >
+      <div>
+        <strong>
+          {room.number} · {room.room_type} ·{" "}
+          {room.active ? "Available for sale" : "Offline"}
+        </strong>
+        <label>
+          Room number
+          <input
+            aria-label={`Room number ${room.number}`}
+            required
+            maxLength={40}
+            value={number}
+            onChange={(event) => setNumber(event.target.value)}
+          />
+        </label>
+      </div>
+      <button disabled={busy}>Save room number</button>
+      <button
+        type="button"
+        className="secondary"
+        disabled={busy}
+        onClick={() => save({ active: !room.active })}
+      >
+        {room.active ? "Take offline" : "Make available"}
+      </button>
+    </form>
+  );
+}
 export default function Admin() {
   const signedInHere = useRef(false);
   const [rows, setRows] = useState<Booking[]>([]),
@@ -250,6 +297,8 @@ export default function Admin() {
       "bookings.read",
       "payments.read",
     ]);
+  const [newRoomNumber, setNewRoomNumber] = useState(""),
+    [newRoomType, setNewRoomType] = useState("");
   const [tab, setTab] = useState("Bookings"),
     [calendarDate, setCalendarDate] = useState(""),
     [calendar, setCalendar] = useState<
@@ -577,31 +626,78 @@ export default function Admin() {
                     Offline rooms cannot receive new requests. Existing
                     reservations remain valid.
                   </p>
-                  {rooms.map((room) => (
-                    <div className="booking row" key={room.id}>
-                      <strong>
-                        {room.number} · {room.room_type} ·{" "}
-                        {room.active ? "Available for sale" : "Offline"}
-                      </strong>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            await api(
-                              `admin/rooms/${room.id}`,
-                              {
-                                method: "PATCH",
-                                body: JSON.stringify({ active: !room.active }),
-                              },
-                              true,
-                            );
-                            await load();
-                          })
-                        }
+                  <form
+                    className="booking editor"
+                    aria-label="Add physical room"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void run(async () => {
+                        await api(
+                          "admin/rooms",
+                          {
+                            method: "POST",
+                            body: JSON.stringify({
+                              roomTypeId: Number(newRoomType),
+                              number: newRoomNumber,
+                            }),
+                          },
+                          true,
+                        );
+                        setNewRoomNumber("");
+                        await load();
+                        setMessage("Room added to inventory.");
+                      });
+                    }}
+                  >
+                    <h3>Add a room</h3>
+                    <label>
+                      Room type
+                      <select
+                        aria-label="New physical room type"
+                        required
+                        value={newRoomType}
+                        onChange={(event) => setNewRoomType(event.target.value)}
                       >
-                        {room.active ? "Take offline" : "Make available"}
-                      </button>
-                    </div>
+                        <option value="">Choose room type</option>
+                        {types.map((type) => (
+                          <option key={type.id} value={type.id}>
+                            {type.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Room number
+                      <input
+                        aria-label="New physical room number"
+                        required
+                        maxLength={40}
+                        placeholder="e.g. 405"
+                        value={newRoomNumber}
+                        onChange={(event) =>
+                          setNewRoomNumber(event.target.value)
+                        }
+                      />
+                    </label>
+                    <button disabled={busy}>Add physical room</button>
+                  </form>
+                  {rooms.map((room) => (
+                    <PhysicalRoomEditor
+                      key={JSON.stringify(room)}
+                      room={room}
+                      busy={busy}
+                      save={(body) =>
+                        void run(async () => {
+                          await api(
+                            `admin/rooms/${room.id}`,
+                            { method: "PATCH", body: JSON.stringify(body) },
+                            true,
+                          );
+                          await load();
+                          setMessage("Room inventory updated.");
+                        })
+                      }
+                    />
                   ))}
                 </section>
               )}

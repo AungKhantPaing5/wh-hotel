@@ -47,6 +47,18 @@ try{
  await pool.query('DELETE FROM customer_contacts WHERE firebase_uid=$1',[contact.uid]);
  console.log('PASS required phone format validation, authenticated persistence and UID isolation without SMS');
 
+ // Physical room changes preserve existing allocation IDs and reject duplicates.
+ await call('admin/rooms',guest,'POST',{roomTypeId:original.id,number:'acceptance-601'},undefined,403);
+ const newRoom=await call('admin/rooms',owner,'POST',{roomTypeId:original.id,number:'acceptance-601'},undefined,201);
+ await call(`admin/rooms/${newRoom.id}`,staff,'PATCH',{number:'acceptance-602'},undefined,403);
+ await call(`admin/rooms/${newRoom.id}`,owner,'PATCH',{number:'acceptance-602'});
+ assert.ok((await call('rooms')).find(type=>type.id===original.id).room_numbers.includes('acceptance-602'));
+ await call(`admin/rooms/${newRoom.id}`,owner,'PATCH',{number:physical[0].number},undefined,400);
+ await call('admin/rooms',owner,'POST',{roomTypeId:original.id,number:'acceptance-602'},undefined,400);
+ await call(`admin/rooms/${newRoom.id}`,owner,'PATCH',{active:false});
+ assert.ok(!(await call('rooms')).find(type=>type.id===original.id).room_numbers.includes('acceptance-602'));
+ await pool.query('DELETE FROM rooms WHERE id=$1',[newRoom.id]);
+ console.log('PASS physical room creation, renaming, duplicate rejection and public room numbers');
  const newTypeBody={name:'Acceptance Garden Room',description:'A room created by the hotel.',maxGuests:2,nightlyAmountMinor:'7500000',amenities:['Wi-Fi'],photoUrls:[],roomNumbers:['acceptance-501','acceptance-502']};
  await call('admin/room-types',guest,'POST',newTypeBody,undefined,403);
  await call('admin/room-types',staff,'POST',newTypeBody,undefined,403);

@@ -199,7 +199,9 @@ class ApiController {
 
   @Get("rooms") async rooms() {
     return (
-      await db.query("SELECT * FROM room_types ORDER BY nightly_amount_minor")
+      await db.query(
+        `SELECT t.*, ARRAY(SELECT r.number FROM rooms r WHERE r.room_type_id=t.id AND r.active ORDER BY r.number) AS room_numbers FROM room_types t ORDER BY t.nightly_amount_minor`,
+      )
     ).rows;
   }
 
@@ -211,7 +213,7 @@ class ApiController {
     return (
       await db.query(
         `
-      SELECT t.*, count(r.id)::int AS available_rooms FROM room_types t
+      SELECT t.*, count(r.id)::int AS available_rooms, COALESCE(array_agg(r.number ORDER BY r.number) FILTER (WHERE r.id IS NOT NULL), ARRAY[]::text[]) AS room_numbers FROM room_types t
       LEFT JOIN rooms r ON r.room_type_id=t.id AND r.active=true AND NOT EXISTS (
         SELECT 1 FROM bookings b WHERE b.room_id=r.id
         AND b.status IN ('PENDING_APPROVAL','AWAITING_PAYMENT','CONFIRMED')
@@ -266,7 +268,7 @@ class ApiController {
     const identity = await user(authorization);
     return (
       await db.query(
-        "SELECT * FROM bookings WHERE firebase_uid=$1 ORDER BY created_at DESC",
+        "SELECT b.*,r.number AS room_number,t.name AS room_type FROM bookings b JOIN rooms r ON r.id=b.room_id JOIN room_types t ON t.id=r.room_type_id WHERE b.firebase_uid=$1 ORDER BY b.created_at DESC",
         [identity.uid],
       )
     ).rows;
@@ -685,16 +687,64 @@ class ApiController {
       )
     ).rows;
   }
+  @Post("admin/rooms") async createRoom(
+    @Headers("authorization") authorization: string,
+    @Body() body: { roomTypeId?: unknown; number?: unknown },
+  ) {
+    const current = await admin(authorization, "rooms.manage");
+    if (
+      !Number.isSafeInteger(body.roomTypeId) ||
+      Number(body.roomTypeId) < 1 ||
+      typeof body.number !== "string" ||
+      !body.number.trim() ||
+      body.number.length > 40
+    )
+      throw new BadRequestException(
+        "Choose a room type and enter a room number up to 40 characters.",
+      );
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const type = await client.query("SELECT id FROM room_types WHERE id=$1", [
+        body.roomTypeId,
+      ]);
+      if (!type.rowCount) throw new NotFoundException("Room type not found.");
+      const result = (
+        await client.query(
+          "INSERT INTO rooms(room_type_id,number) VALUES($1,$2) RETURNING *",
+          [body.roomTypeId, body.number.trim()],
+        )
+      ).rows[0];
+      await client.query(
+        "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
+        [current.uid, "room.create", JSON.stringify({ roomId: result.id })],
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      if ((error as { code?: string }).code === "23505")
+        throw new BadRequestException("This room number already exists.");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   @Patch("admin/rooms/:id") async roomActive(
     @Headers("authorization") authorization: string,
     @Param("id") value: string,
-    @Body() body: { active?: boolean },
+    @Body() body: { active?: boolean; number?: unknown },
   ) {
     const current = await admin(authorization, "rooms.manage");
     if (
       !Number.isSafeInteger(Number(value)) ||
       Number(value) < 1 ||
-      typeof body.active !== "boolean"
+      (body.active === undefined && body.number === undefined) ||
+      (body.active !== undefined && typeof body.active !== "boolean") ||
+      (body.number !== undefined &&
+        (typeof body.number !== "string" ||
+          !body.number.trim() ||
+          body.number.length > 40))
     )
       throw new BadRequestException();
     const client = await db.connect();
@@ -702,8 +752,12 @@ class ApiController {
       await client.query("BEGIN");
       const result = (
         await client.query(
-          "UPDATE rooms SET active=$2 WHERE id=$1 RETURNING *",
-          [Number(value), body.active],
+          "UPDATE rooms SET active=COALESCE($2,active),number=COALESCE($3,number) WHERE id=$1 RETURNING *",
+          [
+            Number(value),
+            body.active ?? null,
+            typeof body.number === "string" ? body.number.trim() : null,
+          ],
         )
       ).rows[0];
       if (!result) throw new NotFoundException();
@@ -711,14 +765,20 @@ class ApiController {
         "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
         [
           current.uid,
-          "room.active",
-          JSON.stringify({ roomId: Number(value), active: body.active }),
+          "room.update",
+          JSON.stringify({
+            roomId: Number(value),
+            active: body.active,
+            number: body.number,
+          }),
         ],
       );
       await client.query("COMMIT");
       return result;
     } catch (e) {
       await client.query("ROLLBACK");
+      if ((e as { code?: string }).code === "23505")
+        throw new BadRequestException("This room number already exists.");
       throw e;
     } finally {
       client.release();
