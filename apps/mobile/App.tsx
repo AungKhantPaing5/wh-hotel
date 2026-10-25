@@ -216,8 +216,12 @@ function Main() {
             if (uid.current !== current.uid) return;
             setUser({ ...current, phone: profile.phone });
             setPhone(profile.phone || "");
-            if (profile.needsPhone) setTab("Account");
-            else if (selectedRoomRef.current) setTab("Explore");
+            if (profile.needsPhone) {
+              setTab("Account");
+              requestAnimationFrame(() =>
+                scroll.current?.scrollTo({ y: 0, animated: true }),
+              );
+            } else if (selectedRoomRef.current) setTab("Explore");
           })
           .catch((error) => {
             if (uid.current === current.uid) {
@@ -789,6 +793,44 @@ function Main() {
               ) : (
                 <>
                   {!authReady && <ActivityIndicator />}
+                  {user && !user.phone && authReady && (
+                    <View style={[s.card, s.contactCard]}>
+                      <Text style={s.kicker}>ONE LAST THING</Text>
+                      <Text style={s.authTitle}>Your phone number</Text>
+                      <Text style={s.body}>
+                        Start with 09 and enter exactly 11 digits. No SMS or OTP
+                        is required.
+                      </Text>
+                      <Field
+                        label="Phone number"
+                        value={phone}
+                        onChangeText={setPhone}
+                        keyboardType="phone-pad"
+                        maxLength={11}
+                      />
+                      <Button
+                        title="Save and continue →"
+                        disabled={busy || !authReady}
+                        onPress={() =>
+                          void run(async () => {
+                            if (!validContactPhone(phone))
+                              throw new Error(
+                                "Start with 09 and enter exactly 11 digits.",
+                              );
+                            await api.saveContact(phone);
+                            const profile = await api.profile();
+                            if (uid.current !== user.uid) return;
+                            setUser({ ...user, phone: profile.phone });
+                            setTab(
+                              selectedRoomRef.current
+                                ? "Explore"
+                                : "My bookings",
+                            );
+                          })
+                        }
+                      />
+                    </View>
+                  )}
                   {user ? (
                     <View style={s.card}>
                       <Text style={s.heading}>
@@ -1019,44 +1061,6 @@ function Main() {
                       <Text style={s.authFinePrint}>
                         Your account connects you to your stay at WN.
                       </Text>
-                    </View>
-                  )}
-                  {user && !user.phone && (
-                    <View style={[s.card, s.contactCard]}>
-                      <Text style={s.kicker}>ONE LAST THING</Text>
-                      <Text style={s.authTitle}>Your phone number</Text>
-                      <Text style={s.body}>
-                        Start with 09 and enter exactly 11 digits. No SMS or OTP
-                        is required.
-                      </Text>
-                      <Field
-                        label="Phone number"
-                        value={phone}
-                        onChangeText={setPhone}
-                        keyboardType="phone-pad"
-                        maxLength={11}
-                      />
-                      <Button
-                        title="Save and continue →"
-                        disabled={busy || !authReady}
-                        onPress={() =>
-                          void run(async () => {
-                            if (!validContactPhone(phone))
-                              throw new Error(
-                                "Start with 09 and enter exactly 11 digits.",
-                              );
-                            await api.saveContact(phone);
-                            const profile = await api.profile();
-                            if (uid.current !== user.uid) return;
-                            setUser({ ...user, phone: profile.phone });
-                            setTab(
-                              selectedRoomRef.current
-                                ? "Explore"
-                                : "My bookings",
-                            );
-                          })
-                        }
-                      />
                     </View>
                   )}
                 </>
