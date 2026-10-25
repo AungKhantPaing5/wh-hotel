@@ -36,7 +36,7 @@ type Booking = {
   total_amount_minor: string;
 };
 type Profile = { uid: string; needsEmail: boolean; needsPhone: boolean };
-type AuthView = "login" | "signup" | "reset" | "phone";
+type AuthView = "login" | "signup" | "reset" | "phone" | "verify-phone";
 const localTest = process.env.NEXT_PUBLIC_LOCAL_TEST === "true";
 const money = (minor: string) =>
   new Intl.NumberFormat("en-US").format(Number(minor) / 100) + " MMK";
@@ -117,6 +117,12 @@ export default function Home() {
     try {
       return onAuthStateChanged(auth(), (user) => {
         setSignedIn(Boolean(user));
+        if (user && !user.phoneNumber) {
+          setAuthMessage(
+            "Complete your account: verify your phone number with an SMS code.",
+          );
+          setAuthView("verify-phone");
+        }
         if (!user) {
           setProfile(null);
           setBookings([]);
@@ -200,7 +206,7 @@ export default function Home() {
     setPassword("");
     setRepeatPassword("");
   }
-  async function task(fn: () => Promise<void>, inDialog = false) {
+  async function task(fn: () => Promise<unknown>, inDialog = false) {
     if (busy) return;
     setBusy(true);
     inDialog ? setAuthMessage("") : setMessage("");
@@ -214,12 +220,22 @@ export default function Home() {
   }
   async function refreshProfile() {
     await auth().authStateReady();
-    setProfile(await api("me", {}, true));
+    const nextProfile: Profile = await api("me", {}, true);
+    setProfile(nextProfile);
     setBookings(await api("bookings", {}, true));
+    return nextProfile;
   }
   async function finishLogin() {
     setSignedIn(true);
-    await refreshProfile();
+    const nextProfile = await refreshProfile();
+    if (nextProfile.needsPhone) {
+      setAccount(false);
+      openAuth("verify-phone");
+      setAuthMessage(
+        "Complete your account: verify your phone number with an SMS code.",
+      );
+      return;
+    }
     closeAuth();
     setAccount(true);
   }
@@ -320,6 +336,11 @@ export default function Home() {
       openAuth("login");
       return;
     }
+    if (!auth().currentUser?.phoneNumber) {
+      openAuth("verify-phone");
+      setAuthMessage("Verify your phone number before requesting a stay.");
+      return;
+    }
     const body = { roomTypeId: room.id, checkIn, checkOut, guests };
     const fingerprint = JSON.stringify([currentUid, body]),
       storageKey = `wh.booking.request.${currentUid}`;
@@ -361,14 +382,17 @@ export default function Home() {
       `Request ${result.id} received. Status: ${result.status}. The hotel will review your request.`,
     );
   }
+  const phoneMode = authView === "phone" || authView === "verify-phone";
   const authTitle =
     authView === "signup"
       ? "Make yourself at home"
       : authView === "reset"
         ? "Forgot your password?"
-        : authView === "phone"
-          ? "A code, and you’re in"
-          : "Welcome back";
+        : authView === "verify-phone"
+          ? "Verify your phone number"
+          : authView === "phone"
+            ? "A code, and you’re in"
+            : "Welcome back";
   const heroPhoto = rooms.find((r) => r.photo_urls?.[0])?.photo_urls?.[0];
   return (
     <>
@@ -892,8 +916,10 @@ export default function Home() {
                 ? "Create your WN account and plan your next stay."
                 : authView === "reset"
                   ? "We’ll send you a link to reset your password."
-                  : authView === "phone"
-                    ? "Sign in securely with your phone number."
+                  : phoneMode
+                    ? authView === "verify-phone"
+                      ? "Enter your phone number, request an SMS code, then enter the code to finish setup."
+                      : "Sign in securely with your phone number."
                     : "Log in to plan your stay and manage your bookings."}
             </p>
             {authView && (
@@ -901,7 +927,7 @@ export default function Home() {
                 {authMessage}
               </div>
             )}
-            {authView !== "phone" ? (
+            {!phoneMode ? (
               <form
                 className="auth-form"
                 onSubmit={(e) => {
@@ -1091,7 +1117,20 @@ export default function Home() {
                 </button>
               </>
             )}
-            {authView === "reset" || authView === "phone" ? (
+            {authView === "verify-phone" ? (
+              <button
+                className="auth-switch"
+                disabled={busy}
+                onClick={() =>
+                  void task(async () => {
+                    await logout();
+                    closeAuth();
+                  }, true)
+                }
+              >
+                Sign out and finish later
+              </button>
+            ) : authView === "reset" || authView === "phone" ? (
               <button className="auth-switch" onClick={() => openAuth("login")}>
                 Back to login
               </button>
