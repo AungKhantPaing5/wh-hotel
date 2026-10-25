@@ -61,3 +61,17 @@ test("booking retry identity is scoped to UID and request details", () => {
     bookingFingerprint("uid-a", room, { ...stay, guests: 1 }),
   );
 });
+
+import { validContactPhone } from "../src/domain";
+test("contact phone accepts exactly eleven local digits without requiring OTP", () => {
+  assert.equal(validContactPhone("09123456789"), true);
+  for (const value of [
+    "08123456789",
+    "0912345678",
+    "091234567890",
+    "+959123456789",
+    "09abcdefghi",
+    "09123456789\n",
+  ])
+    assert.equal(validContactPhone(value), false);
+});

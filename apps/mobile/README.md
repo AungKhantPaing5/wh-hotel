@@ -192,3 +192,24 @@ GitHub preview APK က ARM64 Android devices အတွက် ဖြစ်ပါ�
 
 
 For runtime private-server testing in the preview APK and Vultr SSH forwarding, see [the updated final-test guide](../../docs/FINAL-TEST.md#wn-update-app-testing-on-vultr--photo-uploads). Native package IDs are preserved for compatibility; the display name is WN Hotel.
+
+## WN 0.4 native customer experience
+
+The app has its own login/signup/reset forms, account contact completion, native date pickers, photo gallery, room-number displays, booking review sheet and booking history. No hotel website or WebView is opened for these flows. The same PostgreSQL-backed API is used by both clients. Phone contact is stored by `PATCH /me/contact`; it must start with 09 and contain exactly 11 digits. The app does not ask for SMS OTP.
+
+The My bookings screen refreshes while open and supports pull-to-refresh. Booking status and final amounts always come from the API. Payments remain unavailable until a real payment provider is integrated. OAuth may use the provider's own system sign-in dialog; password-reset and verification messages are delivered by email.
+
+### Live Android Firebase APK
+
+The auth-disabled preview APK is not a working live authentication build. Use `.github/workflows/android-live.yml` for the standalone Android Firebase build:
+
+1. In Firebase project `hotelbooking-d9229`, register an Android app with package `com.whhotel.wh_mobile`.
+2. Download the **Android client** `google-services.json`. Do not use a Firebase Admin/service-account key.
+3. Add its complete contents to the repository Actions secret `EXPO_ANDROID_GOOGLE_SERVICES_JSON`.
+4. Set the Actions variable `EXPO_PUBLIC_API_URL` to `https://thai1.payapi.uk/api` (this is also the workflow fallback).
+5. For Google sign-in, set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` or include a type-3 OAuth client in the downloaded Android config. Add the signingReport SHA-1/SHA-256 to the Firebase Android app, then download updated config and rebuild. Email/password authentication does not depend on the Google OAuth client ID.
+6. Run **WN Android Live Firebase** under GitHub Actions. Download `WN-Android-Live-Firebase-APK` when it succeeds. This is a standalone, test-signed ARM64 APK for sideload testing, not a Play Store release.
+
+If the client configuration secret is missing, the workflow reports that the live APK was not built. It never silently substitutes an auth-disabled preview. Apple on Android additionally needs the Apple Service ID and redirect URI configured in the existing native adapter.
+
+Real device sign-in and booking tests must be completed after the actual Android Firebase configuration is supplied. Mobile unit tests and bundle export validate the implementation but do not establish real Firebase sign-in or inbox delivery.

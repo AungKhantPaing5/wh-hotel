@@ -88,3 +88,28 @@ test("does not turn a server failure into preview or payment success", async () 
   );
   await assert.rejects(() => api.rooms(), /Unexpected response/);
 });
+
+test("native account contact is saved against the authenticated backend without SMS", async () => {
+  let url = "",
+    body: RequestInit | undefined;
+  const api = new WhApi(
+    "https://hotel.example/api",
+    async () => "firebase-token",
+    async (input, options) => {
+      url = String(input);
+      body = options;
+      return new Response(
+        JSON.stringify({ phone: "09123456789", needsPhone: false }),
+        { status: 200 },
+      );
+    },
+  );
+  await api.saveContact("09123456789");
+  assert.equal(url, "https://hotel.example/api/me/contact");
+  assert.equal(body?.method, "PATCH");
+  assert.equal(
+    (body?.headers as Record<string, string>).Authorization,
+    "Bearer firebase-token",
+  );
+  assert.deepEqual(JSON.parse(String(body?.body)), { phone: "09123456789" });
+});

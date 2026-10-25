@@ -8,6 +8,7 @@ export interface Room {
   amenities: string[];
   available_rooms?: number;
   photo_urls?: string[];
+  room_numbers?: string[];
 }
 export interface Stay {
   checkIn: string;
@@ -22,6 +23,8 @@ export interface Booking {
   total_amount_minor: string;
   currency: string;
   expires_at: string | null;
+  room_number?: string;
+  room_type?: string;
 }
 export function hotelToday(now = new Date()): string {
   return new Date(now.getTime() + 390 * 60000).toISOString().slice(0, 10);
@@ -103,3 +106,6 @@ export const previewRooms: Room[] = [
     amenities: ["Wi-Fi", "Living area", "Breakfast"],
   },
 ];
+
+export const validContactPhone = (phone: string) =>
+  phone.length === 11 && /^09[0-9]{9}$/.test(phone);

@@ -43,10 +43,9 @@ export class WhApi {
       key?: string;
     } = {},
   ): Promise<T> {
-    const base =
-      runtime.localTest
-        ? validateLocalUrl(this.base)
-        : apiBase(this.base);
+    const base = runtime.localTest
+      ? validateLocalUrl(this.base)
+      : apiBase(this.base);
     const headers: Record<string, string> = { Accept: "application/json" };
     if (options.authenticated) {
       const token = await this.token();
@@ -84,6 +83,21 @@ export class WhApi {
     } finally {
       clearTimeout(timer);
     }
+  }
+  profile() {
+    return this.request<{
+      uid: string;
+      phone: string | null;
+      needsPhone: boolean;
+      email: string | null;
+    }>("me", { authenticated: true });
+  }
+  saveContact(phone: string) {
+    return this.request("me/contact", {
+      method: "PATCH",
+      body: { phone },
+      authenticated: true,
+    });
   }
   rooms(stay?: Stay) {
     return this.request<Room[]>(

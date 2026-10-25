@@ -19,3 +19,7 @@ backups/
 
 __pycache__/
 *.pyc
+apps/mobile/google-services.json
+apps/mobile/GoogleService-Info.plist
+apps/mobile/android/
+apps/mobile/ios/

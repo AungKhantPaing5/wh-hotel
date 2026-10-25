@@ -2,6 +2,9 @@ import { runtime, photoAddress } from "./src/runtime";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Modal,
+  RefreshControl,
   Image,
   Alert,
   KeyboardAvoidingView,
@@ -29,6 +32,7 @@ import {
   nights,
   previewRooms,
   validateStay,
+  validContactPhone,
   type Booking,
   type Room,
   type Stay,
@@ -47,18 +51,30 @@ function Button({
   disabled?: boolean;
   secondary?: boolean;
 }) {
+  const scale = useRef(new Animated.Value(1)).current;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={[s.button, secondary && s.secondary, disabled && s.disabled]}
-    >
-      <Text style={[s.buttonText, secondary && { color: "#174b3f" }]}>
-        {title}
-      </Text>
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable
+        onPressIn={() =>
+          Animated.spring(scale, {
+            toValue: 0.975,
+            useNativeDriver: true,
+          }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start()
+        }
+        accessibilityRole="button"
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        onPress={onPress}
+        style={[s.button, secondary && s.secondary, disabled && s.disabled]}
+      >
+        <Text style={[s.buttonText, secondary && { color: "#174b3f" }]}>
+          {title}
+        </Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 function Field({
@@ -67,13 +83,16 @@ function Field({
   onChangeText,
   secure = false,
   keyboardType = "default",
+  maxLength,
 }: {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
   secure?: boolean;
   keyboardType?: "default" | "email-address" | "phone-pad" | "number-pad";
+  maxLength?: number;
 }) {
+  const [hidden, setHidden] = useState(true);
   return (
     <View style={s.field}>
       <Text style={s.label}>{label}</Text>
@@ -81,11 +100,24 @@ function Field({
         accessibilityLabel={label}
         value={value}
         onChangeText={onChangeText}
-        secureTextEntry={secure}
+        secureTextEntry={secure && hidden}
+        maxLength={maxLength}
+        autoCorrect={false}
         autoCapitalize="none"
         keyboardType={keyboardType}
         style={s.input}
       />
+      {secure && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={hidden ? "Show password" : "Hide password"}
+          onPress={() => setHidden(!hidden)}
+        >
+          <Text style={s.passwordToggle}>
+            {hidden ? "Show password" : "Hide password"}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -146,9 +178,17 @@ function Main() {
   const [error, setError] = useState("");
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
-  const [phone, setPhone] = useState(""),
-    [code, setCode] = useState(""),
-    [smsSent, setSmsSent] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [accountMode, setAccountMode] = useState<"login" | "signup" | "reset">(
+    "login",
+  );
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [gallery, setGallery] = useState<{ room: Room; index: number } | null>(
+    null,
+  );
+  const selectedRoomRef = useRef<Room | null>(null);
+  selectedRoomRef.current = selected;
+  const scroll = useRef<ScrollView | null>(null);
   const api = useMemo(
     () => new WhApi(API_URL, () => auth?.token() ?? Promise.resolve(null)),
     [],
@@ -162,12 +202,32 @@ function Main() {
           bookingGeneration.current++;
           setBookings([]);
           setReceipt(null);
-          setSmsSent(false);
-          setCode("");
         }
         uid.current = current?.uid ?? null;
-        setUser(current);
-        setAuthReady(true);
+        setUser(current ? { ...current, phone: null } : null);
+        if (!current) {
+          setAuthReady(true);
+          return;
+        }
+        setAuthReady(false);
+        void api
+          .profile()
+          .then((profile) => {
+            if (uid.current !== current.uid) return;
+            setUser({ ...current, phone: profile.phone });
+            setPhone(profile.phone || "");
+            if (profile.needsPhone) setTab("Account");
+            else if (selectedRoomRef.current) setTab("Explore");
+          })
+          .catch((error) => {
+            if (uid.current === current.uid) {
+              setError(error.message);
+              setTab("Account");
+            }
+          })
+          .finally(() => {
+            if (uid.current === current.uid) setAuthReady(true);
+          });
       }),
     [],
   );
@@ -208,6 +268,13 @@ function Main() {
   useEffect(() => {
     if (tab === "My bookings" && user && API_URL) void run(loadBookings);
   }, [tab, user?.uid]);
+  useEffect(() => {
+    if (tab !== "My bookings" || !user || !API_URL) return;
+    const timer = setInterval(() => {
+      void loadBookings().catch(() => {});
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [tab, user?.uid]);
   // Refresh display of expired holds even when the guest leaves the screen open.
   const [, tick] = useState(0);
   useEffect(() => {
@@ -225,7 +292,7 @@ function Main() {
       throw new Error("Configure the API and sign in before booking.");
     if (!user.phone) {
       setTab("Account");
-      throw new Error("Verify your phone number before booking.");
+      throw new Error("Add your 11-digit phone number before booking.");
     }
     const validation = validateStay(stay);
     if (validation) throw new Error(validation);
@@ -284,38 +351,33 @@ function Main() {
       <View style={s.header}>
         <View>
           <Text style={s.brand}>WN</Text>
-          <Text style={s.eyebrow}>YOUR STAY, SIMPLY BETTER</Text>
+          <Text style={s.eyebrow}>HOTEL & STAYS</Text>
         </View>
-        <Text style={s.version}>HOTEL · v0.3</Text>
-      </View>
-      <View style={s.tabs}>
-        {(["Explore", "My bookings", "Account"] as Tab[]).map((item) => (
-          <Pressable
-            key={item}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: tab === item }}
-            onPress={() => {
-              setTab(item);
-              setError("");
-            }}
-            style={[s.tab, tab === item && s.activeTab]}
-          >
-            <Text
-              style={[
-                s.tabText,
-                tab === item && { color: "#174b3f", fontWeight: "700" },
-              ]}
-            >
-              {item}
-            </Text>
-          </Pressable>
-        ))}
+        <View style={s.headerBadge}>
+          <Text style={s.version}>YOUR PRIVATE ESCAPE</Text>
+          <Text style={s.headerBadgeText}>A warm welcome ↗</Text>
+        </View>
       </View>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         <ScrollView
+          ref={scroll}
+          refreshControl={
+            <RefreshControl
+              refreshing={busy}
+              tintColor="#24483a"
+              onRefresh={() =>
+                void run(async () => {
+                  if (tab === "My bookings" && user) await loadBookings();
+                  else if (tab === "Explore")
+                    await loadRooms(searched || undefined);
+                  else if (user) await auth?.refresh();
+                })
+              }
+            />
+          }
           contentContainerStyle={s.content}
           keyboardShouldPersistTaps="handled"
         >
@@ -341,15 +403,20 @@ function Main() {
           {tab === "Explore" && (
             <>
               <View style={s.hero}>
-                <Text style={s.kicker}>WELCOME TO WN</Text>
+                <Text style={s.heroMark}>WN</Text>
+                <Text style={s.kicker}>A STAY THAT FEELS LIKE YOU</Text>
                 <Text style={s.title}>
-                  {"A little escape.\nA memorable stay."}
+                  {"A little pause.\nA beautiful stay."}
                 </Text>
                 <Text style={s.heroText}>
-                  Find your room and let us take care of the rest.
+                  Thoughtful comforts. A little calm. Your next stay begins
+                  right here.
+                </Text>
+                <Text style={s.heroFootnote}>
+                  ONE HOTEL. A PERSONAL WELCOME.
                 </Text>
               </View>
-              <View style={s.card}>
+              <View style={[s.card, s.searchCard]}>
                 <Text style={s.heading}>Plan your stay</Text>
                 <View style={s.row}>
                   <DateField
@@ -430,44 +497,102 @@ function Main() {
                 </View>
               )}
               {selected ? (
-                <View style={s.card}>
-                  <Text style={s.kicker}>REVIEW YOUR REQUEST</Text>
-                  <Text style={s.heading}>{selected.name}</Text>
-                  <Text style={s.body}>
-                    {stay.checkIn} → {stay.checkOut} · {nights(stay)} nights ·{" "}
-                    {stay.guests} guests
-                  </Text>
-                  <Text style={s.price}>
-                    {money(
-                      (
-                        BigInt(selected.nightly_amount_minor) *
-                        BigInt(nights(stay))
-                      ).toString(),
-                      selected.currency,
-                    )}
-                  </Text>
-                  <Text style={s.muted}>
-                    Estimate only. The server calculates the final total.
-                    Requests are held up to 30 minutes for hotel approval.
-                    Payment integration is not enabled yet.
-                  </Text>
-                  {!user?.phone && (
-                    <Text style={s.warning}>
-                      Sign in and verify your phone in Account before
-                      submitting.
-                    </Text>
-                  )}
-                  <Button
-                    title="Submit booking request"
-                    disabled={busy || !API_URL || !user?.phone || !authReady}
-                    onPress={() => void run(submit)}
-                  />
-                  <Button
-                    title="Back to rooms"
-                    secondary
-                    onPress={() => setSelected(null)}
-                  />
-                </View>
+                <Modal
+                  animationType="slide"
+                  visible
+                  onRequestClose={() => setSelected(null)}
+                >
+                  <SafeAreaView style={s.safe}>
+                    <ScrollView
+                      contentContainerStyle={s.content}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      <View style={s.card}>
+                        <View style={s.row}>
+                          <Text style={s.sheetLabel}>YOUR NEXT STAY</Text>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel="Close booking review"
+                            onPress={() => setSelected(null)}
+                          >
+                            <Text style={s.closeText}>✕</Text>
+                          </Pressable>
+                        </View>
+                        <DateField
+                          label="Stay check-in"
+                          value={stay.checkIn}
+                          onChange={(date) => {
+                            setStay({
+                              ...stay,
+                              checkIn: date,
+                              checkOut:
+                                date >= stay.checkOut
+                                  ? addDays(date, 1)
+                                  : stay.checkOut,
+                            });
+                            setSearched(null);
+                          }}
+                        />
+                        <DateField
+                          label="Stay check-out"
+                          value={stay.checkOut}
+                          onChange={(date) => {
+                            setStay({ ...stay, checkOut: date });
+                            setSearched(null);
+                          }}
+                        />
+                        {!!error && (
+                          <Text accessibilityRole="alert" style={s.errorText}>
+                            {error}
+                          </Text>
+                        )}
+
+                        <Text style={s.kicker}>REVIEW YOUR REQUEST</Text>
+                        <Text style={s.heading}>{selected.name}</Text>
+                        <Text style={s.body}>
+                          {stay.checkIn} → {stay.checkOut} · {nights(stay)}{" "}
+                          nights · {stay.guests} guests
+                        </Text>
+                        <Text style={s.price}>
+                          {money(
+                            (
+                              BigInt(selected.nightly_amount_minor) *
+                              BigInt(nights(stay))
+                            ).toString(),
+                            selected.currency,
+                          )}
+                        </Text>
+                        <Text style={s.muted}>
+                          Estimate only. The server calculates the final total.
+                          Requests are held up to 30 minutes for hotel approval.
+                          Payment integration is not enabled yet.
+                        </Text>
+                        {!user?.phone && (
+                          <Text style={s.warning}>
+                            Sign in and add your phone number in Account before
+                            submitting.
+                          </Text>
+                        )}
+                        <Button
+                          title="Submit booking request"
+                          disabled={busy || !API_URL || !authReady}
+                          onPress={() => {
+                            if (!user || !user.phone) {
+                              setTab("Account");
+                              return;
+                            }
+                            void run(submit);
+                          }}
+                        />
+                        <Button
+                          title="Back to rooms"
+                          secondary
+                          onPress={() => setSelected(null)}
+                        />
+                      </View>
+                    </ScrollView>
+                  </SafeAreaView>
+                </Modal>
               ) : (
                 <>
                   <Text style={s.heading}>
@@ -479,17 +604,23 @@ function Main() {
                     </Text>
                   )}
                   {rooms.map((room) => (
-                    <View key={room.id} style={s.card}>
+                    <View key={room.id} style={[s.card, s.roomCard]}>
                       {room.photo_urls?.[0] ? (
-                        <Image
-                          accessibilityLabel={room.name}
-                          source={{ uri: photoAddress(room.photo_urls[0]) }}
-                          style={{
-                            width: "100%",
-                            height: 180,
-                            borderRadius: 12,
-                          }}
-                        />
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`View photos of ${room.name}`}
+                          onPress={() => setGallery({ room, index: 0 })}
+                        >
+                          <Image
+                            accessibilityLabel={room.name}
+                            source={{ uri: photoAddress(room.photo_urls[0]) }}
+                            style={{
+                              width: "100%",
+                              height: 230,
+                              borderRadius: 16,
+                            }}
+                          />
+                        </Pressable>
                       ) : (
                         <View style={s.roomArt}>
                           <Text style={s.roomArtText}>
@@ -504,7 +635,18 @@ function Main() {
                           </Text>
                         </View>
                       )}
-                      <Text style={s.heading}>{room.name}</Text>
+                      <Text style={s.roomCategory}>
+                        WN COLLECTION · UP TO {room.max_guests} GUESTS
+                      </Text>
+                      <Text style={s.roomHeading}>{room.name}</Text>
+                      {!!room.room_numbers?.length && (
+                        <View style={s.numberBadge}>
+                          <Text style={s.numberBadgeLabel}>ROOM NUMBERS</Text>
+                          <Text style={s.numberBadgeValue}>
+                            {room.room_numbers.join(" · ")}
+                          </Text>
+                        </View>
+                      )}
                       <Text style={s.body}>{room.description}</Text>
                       <Text style={s.muted}>
                         Up to {room.max_guests} guests ·{" "}
@@ -578,6 +720,11 @@ function Main() {
                         {booking.check_in.slice(0, 10)} →{" "}
                         {booking.check_out.slice(0, 10)}
                       </Text>
+                      {booking.room_number && (
+                        <Text style={s.roomHeading}>
+                          Room {booking.room_number} · {booking.room_type}
+                        </Text>
+                      )}
                       <Text selectable style={s.muted}>
                         Reference: {booking.id}
                       </Text>
@@ -587,7 +734,11 @@ function Main() {
                       {booking.expires_at && (
                         <Text style={s.muted}>
                           Hold deadline:{" "}
-                          {new Date(booking.expires_at).toLocaleString()}
+                          {new Date(booking.expires_at).toLocaleString(
+                            "en-GB",
+                            { timeZone: "Asia/Yangon" },
+                          )}{" "}
+                          (Myanmar time)
                         </Text>
                       )}
                       {localTestMode &&
@@ -625,14 +776,14 @@ function Main() {
                 {user ? "Your account" : "Welcome back"}
               </Text>
               <Text style={s.muted}>
-                Use the same WN account on the website and app.
+                Your stays, your details. Everything you need, right here.
               </Text>
               {!auth ? (
                 <View style={s.card}>
                   <Text style={s.body}>
                     Authentication is disabled in this preview. Configure
                     Firebase and install a native development build to test
-                    Google, Apple and phone login.
+                    email and social login.
                   </Text>
                 </View>
               ) : (
@@ -644,7 +795,7 @@ function Main() {
                         {user.email || user.phone || "WN Guest"}
                       </Text>
                       <Text style={s.body}>
-                        Phone: {user.phone || "Not verified"}
+                        Phone: {user.phone || "Add your number below"}
                       </Text>
                       <Text style={s.body}>
                         Email:{" "}
@@ -656,7 +807,8 @@ function Main() {
                       </Text>
                       {!user.phone && (
                         <Text style={s.warning}>
-                          Add and verify your phone number before booking.
+                          Add your phone number to finish setting up your
+                          account. No OTP is required.
                         </Text>
                       )}
                       {!user.email && (
@@ -720,7 +872,7 @@ function Main() {
                           void run(async () => {
                             await auth!.signOut();
                             setPassword("");
-                            setCode("");
+
                             setPhone("");
                             setEmail("");
                           })
@@ -728,118 +880,183 @@ function Main() {
                       />
                     </View>
                   ) : (
-                    <View style={s.card}>
-                      <Button
-                        title="Continue with Google"
-                        disabled={busy || !authReady}
-                        onPress={() => void run(() => auth!.google())}
-                      />
-                      <Button
-                        title="Continue with Apple"
-                        secondary
-                        disabled={busy || !authReady}
-                        onPress={() => void run(() => auth!.apple())}
-                      />
-                      <Text style={s.heading}>Or use email</Text>
+                    <View style={[s.card, s.authCard]}>
+                      <View style={s.authTabs}>
+                        {(["login", "signup"] as const).map((mode) => (
+                          <Pressable
+                            key={mode}
+                            accessibilityRole="tab"
+                            accessibilityState={{
+                              selected: accountMode === mode,
+                            }}
+                            style={[
+                              s.authTab,
+                              accountMode === mode && s.authTabActive,
+                            ]}
+                            onPress={() => {
+                              setAccountMode(mode);
+                              setError("");
+                              setPassword("");
+                              setConfirmPassword("");
+                            }}
+                          >
+                            <Text
+                              style={[
+                                s.authTabText,
+                                accountMode === mode && s.authTabTextActive,
+                              ]}
+                            >
+                              {mode === "login" ? "Login" : "Sign up"}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <Text style={s.authTitle}>
+                        {accountMode === "signup"
+                          ? "Make yourself at home"
+                          : accountMode === "reset"
+                            ? "Forgot your password?"
+                            : "Welcome back"}
+                      </Text>
+                      <Text style={s.muted}>
+                        {accountMode === "signup"
+                          ? "A personal welcome starts with your WN account."
+                          : "Plan your stay and manage your bookings in the app."}
+                      </Text>
                       <Field
-                        label="Email"
+                        label="Email address"
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
                       />
+                      {accountMode !== "reset" && (
+                        <Field
+                          label="Password"
+                          value={password}
+                          onChangeText={setPassword}
+                          secure
+                        />
+                      )}
+                      {accountMode === "signup" && (
+                        <Field
+                          label="Confirm password"
+                          value={confirmPassword}
+                          onChangeText={setConfirmPassword}
+                          secure
+                        />
+                      )}
+                      <Button
+                        title={
+                          busy
+                            ? "Please wait…"
+                            : accountMode === "signup"
+                              ? "Create account →"
+                              : accountMode === "reset"
+                                ? "Send reset email"
+                                : "Log in →"
+                        }
+                        disabled={busy || !authReady}
+                        onPress={() =>
+                          void run(async () => {
+                            if (accountMode === "reset") {
+                              await auth!.reset(email);
+                              Alert.alert(
+                                "Check your inbox",
+                                "Follow the password-reset email from WN.",
+                              );
+                              return;
+                            }
+                            if (
+                              accountMode === "signup" &&
+                              (password.length < 6 ||
+                                password !== confirmPassword)
+                            )
+                              throw new Error(
+                                "Use at least 6 characters and matching passwords.",
+                              );
+                            await auth!.email(
+                              email.trim(),
+                              password,
+                              accountMode === "signup",
+                            );
+                            setPassword("");
+                            setConfirmPassword("");
+                          })
+                        }
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => {
+                          setAccountMode(
+                            accountMode === "reset" ? "login" : "reset",
+                          );
+                          setError("");
+                        }}
+                      >
+                        <Text style={s.authLink}>
+                          {accountMode === "reset"
+                            ? "Back to login"
+                            : "Forgot password?"}
+                        </Text>
+                      </Pressable>
+                      {accountMode !== "reset" && (
+                        <>
+                          <Text style={s.divider}>OR CONTINUE WITH</Text>
+                          <Button
+                            title="Continue with Google"
+                            secondary
+                            disabled={busy || !authReady}
+                            onPress={() => void run(() => auth!.google())}
+                          />
+                          <Button
+                            title="Continue with Apple"
+                            secondary
+                            disabled={busy || !authReady}
+                            onPress={() => void run(() => auth!.apple())}
+                          />
+                        </>
+                      )}
+                      <Text style={s.authFinePrint}>
+                        Your account connects you to your stay at WN.
+                      </Text>
+                    </View>
+                  )}
+                  {user && !user.phone && (
+                    <View style={[s.card, s.contactCard]}>
+                      <Text style={s.kicker}>ONE LAST THING</Text>
+                      <Text style={s.authTitle}>Your phone number</Text>
+                      <Text style={s.body}>
+                        Start with 09 and enter exactly 11 digits. No SMS or OTP
+                        is required.
+                      </Text>
                       <Field
-                        label="Password"
-                        value={password}
-                        onChangeText={setPassword}
-                        secure
+                        label="Phone number"
+                        value={phone}
+                        onChangeText={setPhone}
+                        keyboardType="phone-pad"
+                        maxLength={11}
                       />
                       <Button
-                        title="Sign in"
+                        title="Save and continue →"
                         disabled={busy || !authReady}
                         onPress={() =>
                           void run(async () => {
-                            await auth!.email(email, password, false);
-                            setPassword("");
-                          })
-                        }
-                      />
-                      <Button
-                        title="Create email account"
-                        secondary
-                        disabled={busy || !authReady}
-                        onPress={() =>
-                          void run(async () => {
-                            await auth!.email(email, password, true);
-                            setPassword("");
-                          })
-                        }
-                      />
-                      <Button
-                        title="Forgot password"
-                        secondary
-                        disabled={busy}
-                        onPress={() =>
-                          void run(async () => {
-                            await auth!.reset(email);
-                            Alert.alert(
-                              "Password reset",
-                              "If this account exists, check your email for reset instructions.",
+                            if (!validContactPhone(phone))
+                              throw new Error(
+                                "Start with 09 and enter exactly 11 digits.",
+                              );
+                            await api.saveContact(phone);
+                            const profile = await api.profile();
+                            if (uid.current !== user.uid) return;
+                            setUser({ ...user, phone: profile.phone });
+                            setTab(
+                              selectedRoomRef.current
+                                ? "Explore"
+                                : "My bookings",
                             );
                           })
                         }
                       />
-                    </View>
-                  )}
-                  {(!user || !user.phone) && (
-                    <View style={s.card}>
-                      <Text style={s.heading}>
-                        {user ? "Verify your phone" : "Or sign in with phone"}
-                      </Text>
-                      <Field
-                        label="Phone (+country code)"
-                        value={phone}
-                        onChangeText={(value) => {
-                          setPhone(value);
-                          setSmsSent(false);
-                          setCode("");
-                        }}
-                        keyboardType="phone-pad"
-                      />
-                      <Text style={s.muted}>
-                        SMS verification uses Firebase. Standard messaging rates
-                        may apply.
-                      </Text>
-                      <Button
-                        title={smsSent ? "Send a new code" : "Send SMS code"}
-                        disabled={busy || !authReady}
-                        onPress={() =>
-                          void run(async () => {
-                            await auth!.sendPhone(phone.trim(), !!user);
-                            setSmsSent(true);
-                          })
-                        }
-                      />
-                      {smsSent && (
-                        <>
-                          <Field
-                            label="6-digit SMS code"
-                            value={code}
-                            onChangeText={setCode}
-                            keyboardType="number-pad"
-                          />
-                          <Button
-                            title="Verify code"
-                            disabled={busy}
-                            onPress={() =>
-                              void run(async () => {
-                                await auth!.confirmPhone(code.trim());
-                                setCode("");
-                                setSmsSent(false);
-                              })
-                            }
-                          />
-                        </>
-                      )}
                     </View>
                   )}
                 </>
@@ -848,11 +1065,91 @@ function Main() {
           )}
           <Text style={s.footer}>
             {
-              "WN HOTEL · Booking MVP\nOnline payments and store releases are not enabled."
+              "WN HOTEL · A PERSONAL WELCOME\nOnline payments and store releases are not enabled."
             }
           </Text>
         </ScrollView>
+        <Modal
+          visible={!!gallery}
+          animationType="fade"
+          onRequestClose={() => setGallery(null)}
+        >
+          <SafeAreaView style={s.gallerySafe}>
+            <StatusBar style="light" />
+            <View style={s.galleryHeader}>
+              <Text style={s.galleryTitle}>{gallery?.room.name}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close photos"
+                onPress={() => setGallery(null)}
+              >
+                <Text style={s.galleryClose}>✕</Text>
+              </Pressable>
+            </View>
+            {gallery && (
+              <Image
+                source={{
+                  uri: photoAddress(gallery.room.photo_urls![gallery.index]!),
+                }}
+                style={s.galleryImage}
+                resizeMode="contain"
+              />
+            )}
+            {gallery && (
+              <View style={s.galleryControls}>
+                <Button
+                  title="Previous"
+                  secondary
+                  disabled={gallery.index === 0}
+                  onPress={() =>
+                    setGallery({ ...gallery, index: gallery.index - 1 })
+                  }
+                />
+                <Text style={s.galleryCount}>
+                  {gallery.index + 1} / {gallery.room.photo_urls?.length}
+                </Text>
+                <Button
+                  title="Next"
+                  secondary
+                  disabled={
+                    gallery.index + 1 === (gallery.room.photo_urls?.length || 0)
+                  }
+                  onPress={() =>
+                    setGallery({ ...gallery, index: gallery.index + 1 })
+                  }
+                />
+              </View>
+            )}
+          </SafeAreaView>
+        </Modal>
       </KeyboardAvoidingView>
+      <View style={s.tabs}>
+        {(["Explore", "My bookings", "Account"] as Tab[]).map((item) => (
+          <Pressable
+            key={item}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === item }}
+            onPress={() => {
+              setTab(item);
+              setError("");
+            }}
+            style={[s.tab, tab === item && s.activeTab]}
+          >
+            <Text
+              style={[
+                s.tabText,
+                tab === item && { color: "#174b3f", fontWeight: "700" },
+              ]}
+            >
+              <Text style={s.navIcon}>
+                {item === "Explore" ? "⌂" : item === "My bookings" ? "▤" : "◉"}
+                {"\n"}
+              </Text>
+              {item === "Account" && !user ? "Login" : item}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </SafeAreaView>
   );
 }
@@ -864,6 +1161,162 @@ export default function App() {
   );
 }
 const s = StyleSheet.create({
+  passwordToggle: {
+    alignSelf: "flex-end",
+    fontSize: 11,
+    color: "#6b7b60",
+    paddingVertical: 3,
+  },
+  headerBadge: {
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    backgroundColor: "#e9ede2",
+    borderRadius: 12,
+    gap: 3,
+  },
+  headerBadgeText: { fontSize: 12, fontWeight: "600", color: "#3b5945" },
+  navIcon: { fontSize: 22, lineHeight: 28 },
+  heroMark: {
+    position: "absolute",
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontSize: 190,
+    color: "#ffffff08",
+    right: -12,
+    bottom: -35,
+  },
+  heroFootnote: {
+    color: "#c6c9ad",
+    letterSpacing: 1.5,
+    fontSize: 8,
+    marginTop: 12,
+  },
+  searchCard: {
+    marginTop: -28,
+    marginHorizontal: 10,
+    shadowColor: "#24483a",
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
+  },
+  roomCard: {
+    shadowColor: "#24483a",
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 4,
+  },
+  roomCategory: {
+    fontSize: 9,
+    letterSpacing: 1.4,
+    color: "#8a927d",
+    fontWeight: "600",
+  },
+  roomHeading: {
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontSize: 27,
+    color: "#24483a",
+  },
+  numberBadge: {
+    padding: 13,
+    backgroundColor: "#f0f3e9",
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  numberBadgeLabel: { fontSize: 9, color: "#849074", letterSpacing: 1 },
+  numberBadgeValue: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4f6548",
+    flex: 1,
+    textAlign: "right",
+  },
+  authCard: {
+    padding: 25,
+    shadowColor: "#24483a",
+    shadowOpacity: 0.06,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  authTabs: {
+    flexDirection: "row",
+    gap: 25,
+    borderBottomWidth: 1,
+    borderColor: "#e5e9df",
+    marginBottom: 5,
+  },
+  authTab: {
+    paddingBottom: 13,
+    borderBottomWidth: 2,
+    borderColor: "transparent",
+  },
+  authTabActive: { borderColor: "#24483a" },
+  authTabText: { fontSize: 13, color: "#939c8e" },
+  authTabTextActive: { color: "#24483a", fontWeight: "600" },
+  authTitle: {
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontSize: 31,
+    color: "#24483a",
+    lineHeight: 38,
+  },
+  authLink: {
+    textAlign: "center",
+    fontSize: 12,
+    color: "#76896a",
+    paddingVertical: 8,
+  },
+  divider: {
+    fontSize: 9,
+    letterSpacing: 1.8,
+    color: "#99a18e",
+    textAlign: "center",
+    marginTop: 14,
+  },
+  authFinePrint: {
+    fontSize: 10,
+    lineHeight: 18,
+    color: "#9aa18f",
+    textAlign: "center",
+    marginTop: 10,
+  },
+  contactCard: {
+    backgroundColor: "#edf2e5",
+    borderColor: "#d5dec8",
+    padding: 25,
+  },
+  sheetLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    color: "#879372",
+    flex: 1,
+    marginTop: 5,
+  },
+  closeText: { fontSize: 22, color: "#6f7d64", padding: 4 },
+  gallerySafe: { flex: 1, backgroundColor: "#18382f" },
+  galleryHeader: {
+    padding: 24,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  galleryTitle: {
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontSize: 24,
+    color: "#f7f0dc",
+    flex: 1,
+  },
+  galleryClose: { color: "#fff", fontSize: 24, padding: 6 },
+  galleryImage: { width: "100%", flex: 1 },
+  galleryControls: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 24,
+  },
+  galleryCount: { fontSize: 12, color: "#d9e1cd" },
   safe: { flex: 1, backgroundColor: "#f5f4ef" },
   header: {
     paddingHorizontal: 24,
@@ -873,8 +1326,9 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   brand: {
-    fontSize: 34,
-    fontWeight: "800",
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontSize: 39,
+    fontWeight: "700",
     color: "#174b3f",
     letterSpacing: -2,
   },
@@ -887,12 +1341,21 @@ const s = StyleSheet.create({
   version: { fontSize: 11, color: "#7d857f", letterSpacing: 1 },
   tabs: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderColor: "#e1e4dc",
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    shadowColor: "#193c2e",
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 10,
   },
-  tab: { flex: 1, padding: 14, alignItems: "center" },
-  activeTab: { borderBottomWidth: 3, borderColor: "#174b3f" },
+  tab: { flex: 1, padding: 10, alignItems: "center", borderRadius: 16 },
+  activeTab: { backgroundColor: "#eaf0e1" },
   tabText: { color: "#7b837d", fontSize: 13 },
   content: {
     padding: 20,
@@ -906,19 +1369,35 @@ const s = StyleSheet.create({
   noticeText: { color: "#315442", fontSize: 12, lineHeight: 18 },
   error: { padding: 14, borderRadius: 10, backgroundColor: "#fce9e5" },
   errorText: { color: "#8f3122", lineHeight: 22 },
-  hero: { backgroundColor: "#174b3f", padding: 24, borderRadius: 22, gap: 14 },
+  hero: {
+    backgroundColor: "#24483a",
+    padding: 29,
+    paddingBottom: 48,
+    borderRadius: 25,
+    gap: 16,
+    overflow: "hidden",
+  },
   kicker: {
     color: "#718450",
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 1.5,
   },
-  title: { color: "#fff", fontSize: 32, lineHeight: 40, fontWeight: "700" },
+  title: {
+    color: "#f6f0dc",
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontSize: 38,
+    lineHeight: 45,
+  },
   heroText: { color: "#d9e4d6", lineHeight: 22 },
-  titleDark: { color: "#173e33", fontSize: 30, fontWeight: "700" },
+  titleDark: {
+    color: "#24483a",
+    fontSize: 34,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
   card: {
     backgroundColor: "#fff",
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 20,
     gap: 14,
     borderWidth: 1,
@@ -941,8 +1420,8 @@ const s = StyleSheet.create({
     backgroundColor: "#fafbf8",
   },
   button: {
-    backgroundColor: "#174b3f",
-    borderRadius: 10,
+    backgroundColor: "#24483a",
+    borderRadius: 13,
     paddingVertical: 13,
     paddingHorizontal: 16,
     alignItems: "center",

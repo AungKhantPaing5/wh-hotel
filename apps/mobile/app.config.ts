@@ -12,8 +12,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: "WN Hotel",
     slug: "wh-hotel",
-    version: "0.3.0",
+    version: "0.4.0",
     scheme: "whhotel",
+    icon: "./assets/icon.png",
     orientation: "portrait",
     userInterfaceStyle: "light",
     ios: {
@@ -39,6 +40,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       package: "com.whhotel.wh_mobile",
+      adaptiveIcon:{foregroundImage:"./assets/adaptive-icon.png",backgroundColor:"#24483a"},
       ...(nativeFirebase
         ? {
             googleServicesFile:
@@ -66,14 +68,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         ? ([
             "@react-native-firebase/app",
             "@react-native-firebase/auth",
-            [
-              "@react-native-google-signin/google-signin",
-              {
-                ...(process.env.GOOGLE_IOS_URL_SCHEME
-                  ? { iosUrlScheme: process.env.GOOGLE_IOS_URL_SCHEME }
-                  : {}),
-              },
-            ],
+            process.env.GOOGLE_IOS_URL_SCHEME
+              ? ["@react-native-google-signin/google-signin", {iosUrlScheme:process.env.GOOGLE_IOS_URL_SCHEME}]
+              : "@react-native-google-signin/google-signin",
           ] as NonNullable<ExpoConfig["plugins"]>)
         : []),
     ],

@@ -76,7 +76,11 @@ export const nativeAuth: AuthAdapter = {
         email.trim(),
         password,
       );
-      await sendEmailVerification(result.user);
+      try {
+        await sendEmailVerification(result.user);
+      } catch {
+        /* Account remains usable; verification can be resent from Account. */
+      }
     } else await signInWithEmailAndPassword(firebase, email.trim(), password);
   },
   async google() {
