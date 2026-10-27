@@ -49,6 +49,10 @@ for (const mobile of [false, true])
       .first()
       .click();
     const dialog = page.getByRole("dialog");
+    await page.screenshot({
+      path: `test-results/signup-${mobile ? "mobile" : "desktop"}.png`,
+      fullPage: false,
+    });
     await dialog
       .getByLabel("Login email", { exact: true })
       .fill(`browser-${Date.now()}-${mobile}@wh.test`);
@@ -80,13 +84,11 @@ for (const mobile of [false, true])
       .find((url: string) => url.startsWith("/api/photos/"));
     expect(imageUrl).toBeTruthy();
     const imageResponse = await page.request.get(imageUrl);
-    await page
-      .getByLabel("Profile photo", { exact: true })
-      .setInputFiles({
-        name: "profile.webp",
-        mimeType: "image/webp",
-        buffer: await imageResponse.body(),
-      });
+    await page.getByLabel("Profile photo", { exact: true }).setInputFiles({
+      name: "profile.webp",
+      mimeType: "image/webp",
+      buffer: await imageResponse.body(),
+    });
     await expect(
       page.getByText("Profile photo updated.", { exact: true }),
     ).toBeVisible();
@@ -185,4 +187,22 @@ test("owner and staff profile workspace keeps assignment owner-managed", async (
     fullPage: true,
   });
   await context.close();
+});
+
+test("mobile staff workspace fits the screen and opens the profile tab", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await adminLogin(page);
+  await page.getByRole("button", { name: "My profile", exact: true }).click();
+  await expect(page.getByLabel("Profile full name")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "test-results/admin-profile-mobile.png",
+    fullPage: true,
+  });
 });
