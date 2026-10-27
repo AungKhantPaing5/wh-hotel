@@ -218,24 +218,24 @@ export function NativeKitchen({
   );
 }
 const s = StyleSheet.create({
-  kicker: { color: "#866b3f", letterSpacing: 3, fontSize: 12, marginTop: 12 },
+  kicker: { color: "#8496b4", letterSpacing: 3, fontSize: 12, marginTop: 12 },
   title: {
     fontSize: 32,
     fontWeight: "700",
-    color: "#173c32",
+    color: "#18263e",
     marginVertical: 12,
   },
   heading: {
     fontSize: 19,
     fontWeight: "600",
-    color: "#173c32",
+    color: "#18263e",
     marginVertical: 8,
   },
-  body: { fontSize: 15, lineHeight: 23, color: "#405b4b", marginVertical: 8 },
+  body: { fontSize: 15, lineHeight: 23, color: "#64748f", marginVertical: 8 },
   light: { color: "#fff", fontWeight: "600" },
-  notice: { color: "#665939", lineHeight: 23, marginVertical: 14 },
+  notice: { color: "#6c7e9a", lineHeight: 23, marginVertical: 14 },
   button: {
-    backgroundColor: "#214f3e",
+    backgroundColor: "#3659e3",
     padding: 16,
     borderRadius: 16,
     alignItems: "center",
@@ -244,18 +244,18 @@ const s = StyleSheet.create({
   },
   card: {
     padding: 20,
-    backgroundColor: "#fffdf7",
+    backgroundColor: "#ffffff",
     borderRadius: 24,
     marginVertical: 14,
     elevation: 6,
-    shadowColor: "#173c32",
+    shadowColor: "#18263e",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 18,
   },
   photo: { height: 200, width: "100%", borderRadius: 16 },
   row: { flexDirection: "row", alignItems: "center", gap: 24, marginTop: 14 },
-  step: { padding: 16, backgroundColor: "#e1eadd", borderRadius: 12 },
+  step: { padding: 16, backgroundColor: "#eaf0ff", borderRadius: 12 },
   input: {
     padding: 14,
     minHeight: 70,

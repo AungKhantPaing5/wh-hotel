@@ -93,6 +93,69 @@ try {
   console.log(
     "PASS local authentication, account creation and permission boundary",
   );
+  const guestProfile = {
+    fullName: "Test guest",
+    phone: "09123456789",
+    address: "Yangon",
+  };
+  assert.equal(
+    (await call("me/profile", guest, "PATCH", guestProfile)).fullName,
+    "Test guest",
+  );
+  assert.equal((await call("me", guest)).phone, guestProfile.phone);
+  await call(
+    "me/profile",
+    guest,
+    "PATCH",
+    { ...guestProfile, isOwner: true },
+    null,
+    400,
+  );
+  await call(
+    "me/profile",
+    staff,
+    "PATCH",
+    { ...guestProfile, jobTitle: "Manager" },
+    null,
+    400,
+  );
+  await call(
+    "admin/accounts/wh-test-staff/profile",
+    guest,
+    "PATCH",
+    guestProfile,
+    null,
+    403,
+  );
+  await call("admin/accounts/wh-test-staff/profile", owner, "PATCH", {
+    ...guestProfile,
+    fullName: "Kitchen staff",
+    jobTitle: "Chef",
+    department: "Kitchen",
+  });
+  assert.equal((await call("me/profile", staff)).jobTitle, "Chef");
+  assert.equal((await call("me/profile", guest)).jobTitle, "");
+  const avatarData = (
+    await sharp({
+      create: { width: 40, height: 40, channels: 3, background: "#3659e3" },
+    })
+      .png()
+      .toBuffer()
+  ).toString("base64");
+  const avatar = await call(
+    "me/profile/photo",
+    guest,
+    "POST",
+    { data: avatarData },
+    null,
+    201,
+  );
+  assert.match(avatar.avatarUrl, /^\/api\/photos\/[a-f0-9]{64}\.webp$/);
+  await call("me/profile/photo", guest, "POST", { data: "invalid" }, null, 400);
+  console.log(
+    "PASS private customer/staff profiles, owner-managed assignment and validated avatar upload",
+  );
+
   const typeBody = {
     name: `Integration-${randomUUID()}`,
     description: "Test room",

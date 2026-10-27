@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ProfileEditor } from "../../components/profile-editor";
 import { useEffect, useRef, useState } from "react";
 import { signInWithEmailAndPassword, signOut } from "../../lib/session";
 import {
@@ -294,6 +295,7 @@ function PhysicalRoomEditor({
 }
 export default function Admin() {
   const signedInHere = useRef(false);
+  const [staffProfile, setStaffProfile] = useState<string | null>(null);
   const [rows, setRows] = useState<Booking[]>([]),
     [types, setTypes] = useState<RoomType[]>([]),
     [rooms, setRooms] = useState<Physical[]>([]),
@@ -367,6 +369,10 @@ export default function Admin() {
       throw new Error("This account does not have administration access.");
     }
     setProfile(p);
+    if (tab === "Bookings" && !p.permissions.includes("bookings.read"))
+      setTab(
+        p.permissions.includes("kitchen.manage") ? "Kitchen" : "My profile",
+      );
     if (p.mustChangePassword) return;
     setRows(
       p.permissions.includes("bookings.read")
@@ -408,8 +414,10 @@ export default function Admin() {
     );
   }
   return (
-    <>
-      <header>
+    <div
+      className={`admin-application ${profile ? "has-session" : "login-screen"}`}
+    >
+      <header className="admin-topbar">
         <a className="brand" href="/">
           WN<span>ADMIN</span>
         </a>
@@ -418,11 +426,58 @@ export default function Admin() {
           {profile?.isOwner && <Link href="/developer">System status</Link>}
         </nav>
       </header>
+      {profile && (
+        <aside className="admin-sidebar">
+          <a href="/" className="sidebar-brand">
+            <span>WN</span>
+            <div>
+              Hotel workspace<small>OPERATIONS CONSOLE</small>
+            </div>
+          </a>
+          <div className="sidebar-section-label">WORKSPACE</div>
+          <nav aria-label="Admin workspace">
+            {[
+              ...(profile.permissions.includes("bookings.read")
+                ? ["Bookings"]
+                : []),
+              ...(profile.permissions.includes("rooms.manage")
+                ? ["Rooms", "Calendar"]
+                : []),
+              ...(profile.permissions.includes("payments.read")
+                ? ["Payments"]
+                : []),
+              ...(profile.permissions.includes("kitchen.manage")
+                ? ["Kitchen"]
+                : []),
+              ...(profile.isOwner ? ["Staff", "Customers"] : []),
+              "My profile",
+            ].map((name, index) => (
+              <button
+                key={name}
+                aria-current={tab === name ? "page" : undefined}
+                className={tab === name ? "sidebar-active" : ""}
+                onClick={() => setTab(name)}
+              >
+                <span aria-hidden="true" className="sidebar-icon">
+                  {["◫", "▦", "□", "↗", "♧", "♙", "◎", "○"][index]}
+                </span>
+                {name}
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-footer">
+            <span className="online-dot" />
+            Hotel workspace online<small>Manage stays with confidence</small>
+          </div>
+        </aside>
+      )}
       <main className="admin-shell">
         <div className="dashboard-intro">
-          <div className="eyebrow">WN OPERATIONS</div>
+          <div className="eyebrow">YOUR HOTEL, AT A GLANCE</div>
           <h1>WN Hotel administration</h1>
-          <p>Every stay, every detail. One calm workspace.</p>
+          <p>
+            {profile ? `Workspace / ${tab}` : "Sign in to your hotel workspace"}
+          </p>
         </div>
         {localTest && (
           <div className="notice">
@@ -516,29 +571,15 @@ export default function Admin() {
         )}
         {profile && !profile.mustChangePassword && (
           <>
-            <div className="row">
-              {[
-                "Bookings",
-                ...(profile.permissions.includes("rooms.manage")
-                  ? ["Rooms", "Calendar"]
-                  : []),
-                ...(profile.permissions.includes("payments.read")
-                  ? ["Payments"]
-                  : []),
-                ...(profile.permissions.includes("kitchen.manage")
-                  ? ["Kitchen"]
-                  : []),
-                ...(profile.isOwner ? ["Staff", "Customers"] : []),
-              ].map((name) => (
-                <button
-                  className={tab === name ? "" : "secondary"}
-                  key={name}
-                  onClick={() => setTab(name)}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
+            {tab === "My profile" && (
+              <>
+                <div className="workspace-heading">
+                  <h2>My staff profile</h2>
+                  <p>Your details, contact information and staff assignment.</p>
+                </div>
+                <ProfileEditor api={api} />
+              </>
+            )}
             {tab === "Customers" && profile.isOwner && (
               <AccountsPanel api={api} />
             )}
@@ -1015,12 +1056,25 @@ export default function Admin() {
                   ))}
                   <button disabled={busy}>Save permissions</button>
                 </form>
+                {staffProfile && (
+                  <ProfileEditor
+                    key={staffProfile}
+                    api={api}
+                    targetUid={staffProfile}
+                  />
+                )}
                 {staff.map((member) => (
                   <div className="booking" key={member.firebase_uid}>
                     <strong>
                       {member.email || "Account email unavailable"}
                     </strong>
                     <p>{member.permissions.join(", ") || "No permissions"}</p>
+                    <button
+                      className="secondary"
+                      onClick={() => setStaffProfile(member.firebase_uid)}
+                    >
+                      Edit staff profile
+                    </button>
                     <button
                       disabled={busy}
                       onClick={() =>
@@ -1043,6 +1097,6 @@ export default function Admin() {
           </>
         )}
       </main>
-    </>
+    </div>
   );
 }

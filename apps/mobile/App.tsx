@@ -21,6 +21,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import { StatusBar } from "expo-status-bar";
+import { NativeProfile } from "./src/NativeProfile";
 import { NativeKitchen } from "./src/NativeKitchen";
 import { WhApi } from "./src/api";
 import { auth, localTestMode, type Identity } from "./src/auth";
@@ -71,7 +72,7 @@ function Button({
         onPress={onPress}
         style={[s.button, secondary && s.secondary, disabled && s.disabled]}
       >
-        <Text style={[s.buttonText, secondary && { color: "#174b3f" }]}>
+        <Text style={[s.buttonText, secondary && { color: "#3659e3" }]}>
           {title}
         </Text>
       </Pressable>
@@ -377,7 +378,7 @@ function Main() {
           refreshControl={
             <RefreshControl
               refreshing={busy}
-              tintColor="#24483a"
+              tintColor="#182b4d"
               onRefresh={() =>
                 void run(async () => {
                   if (tab === "My bookings" && user) await loadBookings();
@@ -408,7 +409,7 @@ function Main() {
             </View>
           )}
           {busy && (
-            <ActivityIndicator accessibilityLabel="Loading" color="#174b3f" />
+            <ActivityIndicator accessibilityLabel="Loading" color="#3659e3" />
           )}
           {tab === "Explore" && (
             <>
@@ -846,76 +847,81 @@ function Main() {
                     </View>
                   )}
                   {user ? (
-                    <View style={s.card}>
-                      <Text style={s.heading}>
-                        {user.email || user.phone || "WN Guest"}
-                      </Text>
-                      <Text style={s.body}>
-                        Phone: {user.phone || "Add your number below"}
-                      </Text>
-                      <Text style={s.body}>
-                        Email:{" "}
-                        {user.email ? "Saved" : "Contact hotel administration"}
-                      </Text>
-                      {!user.phone && (
-                        <Text style={s.warning}>
-                          Add your phone number to finish setting up your
-                          account. No OTP is required.
+                    <View>
+                      <NativeProfile api={api} onSaved={() => auth.refresh()} />
+                      <View style={s.card}>
+                        <Text style={s.heading}>
+                          {user.email || user.phone || "WN Guest"}
                         </Text>
-                      )}
-                      <Button
-                        title="Refresh account"
-                        secondary
-                        disabled={busy}
-                        onPress={() => void run(() => auth!.refresh())}
-                      />
-                      {user.mustChangePassword && (
-                        <Text style={s.warning}>
-                          Change your temporary password before booking or
-                          ordering food.
+                        <Text style={s.body}>
+                          Phone: {user.phone || "Add your number below"}
                         </Text>
-                      )}
-                      <Field
-                        label="Current password"
-                        secure
-                        value={currentPassword}
-                        onChangeText={setCurrentPassword}
-                      />
-                      <Field
-                        label="New password (6+ characters)"
-                        secure
-                        value={newPassword}
-                        onChangeText={setNewPassword}
-                      />
-                      <Button
-                        title="Change password"
-                        disabled={busy}
-                        onPress={() =>
-                          void run(async () => {
-                            await auth.changePassword(
-                              currentPassword,
-                              newPassword,
-                            );
-                            setCurrentPassword("");
-                            setNewPassword("");
-                            Alert.alert("Password changed", "Sign in again.");
-                          })
-                        }
-                      />
-                      <Button
-                        title="Sign out"
-                        secondary
-                        disabled={busy}
-                        onPress={() =>
-                          void run(async () => {
-                            await auth!.signOut();
-                            setPassword("");
+                        <Text style={s.body}>
+                          Email:{" "}
+                          {user.email
+                            ? "Saved"
+                            : "Contact hotel administration"}
+                        </Text>
+                        {!user.phone && (
+                          <Text style={s.warning}>
+                            Add your phone number to finish setting up your
+                            account. No OTP is required.
+                          </Text>
+                        )}
+                        <Button
+                          title="Refresh account"
+                          secondary
+                          disabled={busy}
+                          onPress={() => void run(() => auth!.refresh())}
+                        />
+                        {user.mustChangePassword && (
+                          <Text style={s.warning}>
+                            Change your temporary password before booking or
+                            ordering food.
+                          </Text>
+                        )}
+                        <Field
+                          label="Current password"
+                          secure
+                          value={currentPassword}
+                          onChangeText={setCurrentPassword}
+                        />
+                        <Field
+                          label="New password (6+ characters)"
+                          secure
+                          value={newPassword}
+                          onChangeText={setNewPassword}
+                        />
+                        <Button
+                          title="Change password"
+                          disabled={busy}
+                          onPress={() =>
+                            void run(async () => {
+                              await auth.changePassword(
+                                currentPassword,
+                                newPassword,
+                              );
+                              setCurrentPassword("");
+                              setNewPassword("");
+                              Alert.alert("Password changed", "Sign in again.");
+                            })
+                          }
+                        />
+                        <Button
+                          title="Sign out"
+                          secondary
+                          disabled={busy}
+                          onPress={() =>
+                            void run(async () => {
+                              await auth!.signOut();
+                              setPassword("");
 
-                            setPhone("");
-                            setEmail("");
-                          })
-                        }
-                      />
+                              setPhone("");
+                              setEmail("");
+                            })
+                          }
+                        />
+                      </View>
                     </View>
                   ) : (
                     <View style={[s.card, s.authCard]}>
@@ -1170,7 +1176,7 @@ function Main() {
               <Text
                 style={[
                   s.tabText,
-                  tab === item && { color: "#174b3f", fontWeight: "700" },
+                  tab === item && { color: "#3659e3", fontWeight: "700" },
                 ]}
               >
                 <Text style={s.navIcon}>
@@ -1215,7 +1221,7 @@ const s = StyleSheet.create({
   navIcon: { fontSize: 22, lineHeight: 28 },
   heroMark: {
     position: "absolute",
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontSize: 190,
     color: "#ffffff08",
     right: -12,
@@ -1230,14 +1236,14 @@ const s = StyleSheet.create({
   searchCard: {
     marginTop: -28,
     marginHorizontal: 10,
-    shadowColor: "#24483a",
+    shadowColor: "#182b4d",
     shadowOpacity: 0.1,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
     elevation: 5,
   },
   roomCard: {
-    shadowColor: "#24483a",
+    shadowColor: "#182b4d",
     shadowOpacity: 0.08,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 7 },
@@ -1250,9 +1256,9 @@ const s = StyleSheet.create({
     fontWeight: "600",
   },
   roomHeading: {
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontSize: 27,
-    color: "#24483a",
+    color: "#182b4d",
   },
   numberBadge: {
     padding: 13,
@@ -1272,7 +1278,7 @@ const s = StyleSheet.create({
   },
   authCard: {
     padding: 25,
-    shadowColor: "#24483a",
+    shadowColor: "#182b4d",
     shadowOpacity: 0.06,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 8 },
@@ -1290,13 +1296,13 @@ const s = StyleSheet.create({
     borderBottomWidth: 2,
     borderColor: "transparent",
   },
-  authTabActive: { borderColor: "#24483a" },
+  authTabActive: { borderColor: "#182b4d" },
   authTabText: { fontSize: 13, color: "#939c8e" },
-  authTabTextActive: { color: "#24483a", fontWeight: "600" },
+  authTabTextActive: { color: "#182b4d", fontWeight: "600" },
   authTitle: {
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontSize: 31,
-    color: "#24483a",
+    color: "#182b4d",
     lineHeight: 38,
   },
   authLink: {
@@ -1332,7 +1338,7 @@ const s = StyleSheet.create({
     marginTop: 5,
   },
   closeText: { fontSize: 22, color: "#6f7d64", padding: 4 },
-  gallerySafe: { flex: 1, backgroundColor: "#18382f" },
+  gallerySafe: { flex: 1, backgroundColor: "#182b4d" },
   galleryHeader: {
     padding: 24,
     flexDirection: "row",
@@ -1340,7 +1346,7 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   galleryTitle: {
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontSize: 24,
     color: "#f7f0dc",
     flex: 1,
@@ -1354,7 +1360,7 @@ const s = StyleSheet.create({
     padding: 24,
   },
   galleryCount: { fontSize: 12, color: "#d9e1cd" },
-  safe: { flex: 1, backgroundColor: "#f5f4ef" },
+  safe: { flex: 1, backgroundColor: "#f3f5fa" },
   header: {
     paddingHorizontal: 24,
     paddingVertical: 16,
@@ -1363,10 +1369,10 @@ const s = StyleSheet.create({
     alignItems: "center",
   },
   brand: {
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontSize: 39,
     fontWeight: "700",
-    color: "#174b3f",
+    color: "#3659e3",
     letterSpacing: -2,
   },
   eyebrow: {
@@ -1407,7 +1413,7 @@ const s = StyleSheet.create({
   error: { padding: 14, borderRadius: 10, backgroundColor: "#fce9e5" },
   errorText: { color: "#8f3122", lineHeight: 22 },
   hero: {
-    backgroundColor: "#24483a",
+    backgroundColor: "#182b4d",
     padding: 29,
     paddingBottom: 48,
     borderRadius: 25,
@@ -1422,15 +1428,15 @@ const s = StyleSheet.create({
   },
   title: {
     color: "#f6f0dc",
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontSize: 38,
     lineHeight: 45,
   },
   heroText: { color: "#d9e4d6", lineHeight: 22 },
   titleDark: {
-    color: "#24483a",
+    color: "#182b4d",
     fontSize: 34,
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
   card: {
     backgroundColor: "#fff",
@@ -1457,7 +1463,7 @@ const s = StyleSheet.create({
     backgroundColor: "#fafbf8",
   },
   button: {
-    backgroundColor: "#24483a",
+    backgroundColor: "#182b4d",
     borderRadius: 13,
     paddingVertical: 13,
     paddingHorizontal: 16,
@@ -1468,7 +1474,7 @@ const s = StyleSheet.create({
   buttonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   secondary: { backgroundColor: "#edf2e9" },
   disabled: { opacity: 0.45 },
-  price: { fontSize: 21, fontWeight: "700", color: "#174b3f" },
+  price: { fontSize: 21, fontWeight: "700", color: "#3659e3" },
   footer: {
     textAlign: "center",
     color: "#849083",

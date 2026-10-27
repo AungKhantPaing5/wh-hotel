@@ -9,6 +9,7 @@ import {
   api,
   auth,
 } from "../lib/session";
+import { ProfileEditor } from "../components/profile-editor";
 import { GuestKitchen, ChangePassword } from "../components/hotel-tools";
 
 type Room = {
@@ -85,6 +86,7 @@ function Icon({ name }: { name: "arrow" | "close" | "eye" | "mail" | "user" }) {
   );
 }
 export default function Home() {
+  const [accountTab, setAccountTab] = useState("Profile");
   const [photoIndex, setPhotoIndex] = useState<Record<number, number>>({});
   const [bookingRoom, setBookingRoom] = useState<number | null>(null),
     [bookingMessage, setBookingMessage] = useState("");
@@ -267,6 +269,7 @@ export default function Home() {
       return;
     }
     closeAuth();
+    setAccountTab("Profile");
     setAccount(bookingRoom === null);
   }
   async function submitEmail() {
@@ -369,6 +372,7 @@ export default function Home() {
       );
     }
     await refreshProfile();
+    setAccountTab("Stays");
     setAccount(true);
     setMessage(
       `Request ${result.id} received. Status: ${result.status}. The hotel will review your request.`,
@@ -400,16 +404,23 @@ export default function Home() {
               <button
                 className="nav-login"
                 onClick={() => {
-                  setAccount(!account);
-                  void task(refreshProfile);
+                  setAccountTab("Profile");
+                  setAccount(true);
+                  void task(async () => {
+                    await refreshProfile();
+                    accountPanel.current?.scrollIntoView({
+                      behavior: "smooth",
+                    });
+                  });
                 }}
               >
                 <Icon name="user" />
-                My bookings
+                My account
               </button>
               <button
                 className="nav-login"
                 onClick={() => {
+                  setAccountTab("Kitchen");
                   setAccount(true);
                   void task(async () => {
                     await refreshProfile();
@@ -575,6 +586,9 @@ export default function Home() {
               <div>
                 <div className="eyebrow">YOUR NEXT STAY</div>
                 <h2 id="account-heading">Your WN account</h2>
+                <p className="workspace-subtitle">
+                  A personal space for every part of your stay.
+                </p>
               </div>
               <button
                 className="secondary"
@@ -590,23 +604,8 @@ export default function Home() {
                 Refresh profile
               </button>
             </div>
-            <p className="muted">
-              {auth().currentUser?.email || "Welcome to WN"}
-            </p>
             {profile && (
               <>
-                <div className="verification-summary">
-                  <span>
-                    {profile.needsPhone
-                      ? "Phone number required"
-                      : "Phone number saved."}
-                  </span>
-                  <span>
-                    {profile.needsEmail
-                      ? "Contact administration"
-                      : "Email saved."}
-                  </span>
-                </div>
                 {profile.needsPhone && (
                   <div className="verification-block">
                     <h3>Add your phone number</h3>
@@ -621,61 +620,90 @@ export default function Home() {
                 )}
               </>
             )}
-            <ChangePassword
-              api={api}
-              after={logout}
-              required={Boolean(profile?.mustChangePassword)}
-            />
-            <GuestKitchen api={api} bookings={bookings} />
-            <h3 className="bookings-heading">Your bookings</h3>
-            {bookings.length === 0 ? (
-              <p className="empty-state">
-                Your next getaway starts here. Choose your dates and find a room
-                below.
-              </p>
-            ) : (
-              bookings.map((b) => (
-                <div className="booking guest-booking" key={b.id}>
-                  <div>
-                    <span className="booking-status">{b.status}</span>
-                    {b.room_number && (
-                      <h3 className="assigned-room">
-                        Room {b.room_number} · {b.room_type}
-                      </h3>
-                    )}
-                    <p>
-                      {String(b.check_in).slice(0, 10)}{" "}
-                      <span aria-hidden="true">—</span>{" "}
-                      {String(b.check_out).slice(0, 10)}
-                    </p>
-                    <small>Booking {b.id}</small>
-                  </div>
-                  <div>
-                    <strong>{money(b.total_amount_minor)}</strong>
-                    {localTest && b.status === "AWAITING_PAYMENT" && (
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          void task(async () => {
-                            await api(
-                              `local-test/bookings/${b.id}/pay`,
-                              { method: "POST" },
-                              true,
-                            );
-                            await refreshProfile();
-                            setMessage(
-                              "SIMULATED payment only. No money was charged.",
-                            );
-                          })
-                        }
-                      >
-                        Simulate payment — no money
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
+            <nav
+              className="customer-workspace-tabs"
+              aria-label="Guest workspace"
+            >
+              {["Profile", "Stays", "Kitchen"].map((name) => (
+                <button
+                  key={name}
+                  aria-current={accountTab === name ? "page" : undefined}
+                  onClick={() => setAccountTab(name)}
+                >
+                  {name === "Profile"
+                    ? "My profile"
+                    : name === "Stays"
+                      ? "My stays"
+                      : "Kitchen & dining"}
+                </button>
+              ))}
+            </nav>
+            {accountTab === "Profile" && (
+              <ProfileEditor api={api} onSaved={() => void refreshProfile()} />
             )}
+            <div
+              hidden={accountTab !== "Profile" && !profile?.mustChangePassword}
+            >
+              <ChangePassword
+                api={api}
+                after={logout}
+                required={Boolean(profile?.mustChangePassword)}
+              />
+            </div>
+            {accountTab === "Kitchen" && (
+              <GuestKitchen api={api} bookings={bookings} />
+            )}
+            <div hidden={accountTab !== "Stays"}>
+              <h3 className="bookings-heading">Your bookings</h3>
+              {bookings.length === 0 ? (
+                <p className="empty-state">
+                  Your next getaway starts here. Choose your dates and find a
+                  room below.
+                </p>
+              ) : (
+                bookings.map((b) => (
+                  <div className="booking guest-booking" key={b.id}>
+                    <div>
+                      <span className="booking-status">{b.status}</span>
+                      {b.room_number && (
+                        <h3 className="assigned-room">
+                          Room {b.room_number} · {b.room_type}
+                        </h3>
+                      )}
+                      <p>
+                        {String(b.check_in).slice(0, 10)}{" "}
+                        <span aria-hidden="true">—</span>{" "}
+                        {String(b.check_out).slice(0, 10)}
+                      </p>
+                      <small>Booking {b.id}</small>
+                    </div>
+                    <div>
+                      <strong>{money(b.total_amount_minor)}</strong>
+                      {localTest && b.status === "AWAITING_PAYMENT" && (
+                        <button
+                          disabled={busy}
+                          onClick={() =>
+                            void task(async () => {
+                              await api(
+                                `local-test/bookings/${b.id}/pay`,
+                                { method: "POST" },
+                                true,
+                              );
+                              await refreshProfile();
+                              setMessage(
+                                "SIMULATED payment only. No money was charged.",
+                              );
+                            })
+                          }
+                        >
+                          Simulate payment — no money
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </section>
         )}
         <section id="rooms" className="rooms-section">

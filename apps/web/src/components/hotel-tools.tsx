@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { ProfileEditor } from "./profile-editor";
 type Api = (
   path: string,
   init?: RequestInit,
@@ -94,6 +95,7 @@ export function ChangePassword({
   );
 }
 export function AccountsPanel({ api }: { api: Api }) {
+  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
   const [rows, setRows] = useState<any[]>([]),
     [msg, setMsg] = useState(""),
     [busy, setBusy] = useState(false);
@@ -132,6 +134,13 @@ export function AccountsPanel({ api }: { api: Api }) {
   return (
     <section>
       <h2>Customer & staff accounts</h2>
+      {selectedProfile && (
+        <ProfileEditor
+          key={selectedProfile}
+          api={api}
+          targetUid={selectedProfile}
+        />
+      )}
       <p>
         Create accounts here, then assign staff permissions in Staff. Passwords
         stay hidden. New admin-set passwords require a change on next login.
@@ -166,6 +175,13 @@ export function AccountsPanel({ api }: { api: Api }) {
               onSubmit={(e) => void submit(e, a.uid)}
             >
               <h3>{a.email}</h3>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setSelectedProfile(a.uid)}
+              >
+                Edit user profile
+              </button>
               <label>
                 Email
                 <input

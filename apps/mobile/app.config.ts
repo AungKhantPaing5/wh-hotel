@@ -5,7 +5,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: "WN Hotel",
     slug: "wh-hotel",
-    version: "0.5.0",
+    version: "0.6.0",
     scheme: "whhotel",
     icon: "./assets/icon.png",
     orientation: "portrait",
@@ -26,15 +26,23 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       package: "com.wnhotel.wh_mobile",
-      versionCode: 2,
+      versionCode: 4,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
-        backgroundColor: "#24483a",
+        backgroundColor: "#182b4d",
       },
     },
     plugins: [
       "expo-dev-client",
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          photosPermission: "Choose a profile photo for your WN account.",
+          cameraPermission: false,
+          microphonePermission: false,
+        },
+      ],
       [
         "expo-build-properties",
         {

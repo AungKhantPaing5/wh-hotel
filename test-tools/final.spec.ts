@@ -62,6 +62,44 @@ for (const mobile of [false, true])
     await expect(
       page.getByRole("heading", { name: "Your WN account" }),
     ).toBeVisible();
+    await page.getByLabel("Profile full name").fill("WN Guest Profile");
+    await page.getByLabel("Profile address").fill("Yangon, Myanmar");
+    await page
+      .getByRole("button", { name: "Save profile", exact: true })
+      .click();
+    await expect(
+      page.getByText("Profile updated.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "WN Guest Profile", exact: true }),
+    ).toBeVisible();
+    const roomsResponse = await page.request.get("/api/rooms");
+    const publicRooms = await roomsResponse.json();
+    const imageUrl = publicRooms
+      .flatMap((r: any) => r.photo_urls || [])
+      .find((url: string) => url.startsWith("/api/photos/"));
+    expect(imageUrl).toBeTruthy();
+    const imageResponse = await page.request.get(imageUrl);
+    await page
+      .getByLabel("Profile photo", { exact: true })
+      .setInputFiles({
+        name: "profile.webp",
+        mimeType: "image/webp",
+        buffer: await imageResponse.body(),
+      });
+    await expect(
+      page.getByText("Profile photo updated.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByAltText("Profile photo", { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: `test-results/profile-${mobile ? "mobile" : "desktop"}.png`,
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", { name: "Kitchen & dining", exact: true })
+      .click();
     await expect(
       page.getByText("Hotel staff must check you in", { exact: false }),
     ).toBeVisible();
@@ -94,4 +132,57 @@ test("password recovery is accessible without Firebase", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByLabel("Recovery code")).toHaveValue("invalid");
   await expect(page).toHaveURL(/reset-password$/);
+});
+
+test("owner and staff profile workspace keeps assignment owner-managed", async ({
+  page,
+  browser,
+}) => {
+  await adminLogin(page);
+  await page.getByRole("button", { name: "My profile", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "My staff profile" }),
+  ).toBeVisible();
+  await page.getByLabel("Profile full name").fill("WN Administrator");
+  await page.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(
+    page.getByText("Profile updated.", { exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/admin-profile.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Staff", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Edit staff profile", exact: true })
+    .first()
+    .click();
+  await expect(page.getByLabel("Staff job title")).toHaveValue("Chef");
+  await page.getByLabel("Staff job title").fill("Executive chef");
+  await page.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(
+    page.getByText("Profile updated.", { exact: true }),
+  ).toBeVisible();
+  const context = await browser.newContext();
+  const staff = await context.newPage();
+  await staff.goto("http://localhost:3000/admin");
+  await staff.getByLabel("Admin email", { exact: true }).fill("staff@wh.test");
+  await staff.getByLabel("Admin password", { exact: true }).fill(password);
+  await staff
+    .getByRole("button", { name: "Email sign in", exact: true })
+    .click();
+  await staff.getByRole("button", { name: "My profile", exact: true }).click();
+  await expect(staff.getByLabel("Staff assignment")).toHaveValue(
+    "Executive chef · Kitchen",
+  );
+  await expect(staff.getByLabel("Staff job title")).toHaveCount(0);
+  await expect(staff.getByLabel("Staff assignment")).toHaveAttribute(
+    "readonly",
+    "",
+  );
+  await staff.screenshot({
+    path: "test-results/staff-profile.png",
+    fullPage: true,
+  });
+  await context.close();
 });

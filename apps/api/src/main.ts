@@ -28,6 +28,7 @@ import {
   accountProfile,
   permissionNames,
 } from "./accounts";
+import { ProfileController } from "./profile-controller";
 import { AuthController } from "./auth-controller";
 import { KitchenController } from "./kitchen";
 import { randomUUID, createHash } from "node:crypto";
@@ -1143,7 +1144,14 @@ class ApiController {
   }
 }
 
-@Module({ controllers: [ApiController, AuthController, KitchenController] })
+@Module({
+  controllers: [
+    ApiController,
+    AuthController,
+    KitchenController,
+    ProfileController,
+  ],
+})
 class AppModule {}
 
 async function bootstrap() {

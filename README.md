@@ -6,7 +6,7 @@ Single-hotel booking website, Android/iOS app, administration and kitchen operat
 
 - Next.js website and admin dashboard.
 - NestJS API with PostgreSQL 17, including local email/password accounts.
-- React Native / Expo mobile app, version 0.5.0.
+- React Native / Expo mobile app, version 0.6.0.
 - SMTP for password recovery and booking approval emails.
 - GitHub Actions for verification, disposable end-to-end testing and Android APK builds.
 
@@ -127,3 +127,11 @@ npm test
 - **WH Deploy** runs only after the local end-to-end acceptance workflow succeeds and remains opt-in with repository variable `AUTO_DEPLOY=true`, production environment and SSH secrets. Prepare owner migration and backups before enabling it for this release.
 
 Live payment APIs remain disabled until merchant integration is supplied. Manual payment entry must correspond to an actual payment received by the hotel.
+
+## Personal profiles and WN Studio UI
+
+Customer accounts include My profile / My stays / Kitchen tabs. Profile fields include a full name, local phone, address and a profile photo. Native mobile supports the same profile editor with gallery photo selection.
+
+Staff use **My profile** in the admin sidebar. Staff can change their own contact details and photo. Job title and department are read-only for staff. Owners manage these fields through Staff → Edit staff profile or Customers → Edit user profile. Account email, passwords and permissions continue to use the owner-only account controls.
+
+Migration 007 creates an additive account-profile table. No booking or payment history is removed. Profile images follow the existing normalized, content-addressed WebP storage policy. API authorization scopes every self-profile request to the current account and restricts cross-account profile access to owners.
