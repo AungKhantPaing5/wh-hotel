@@ -943,8 +943,8 @@ export default function Admin() {
                 <section>
                   <h2>Payment transactions</h2>
                   <p>
-                    Only local-test simulated transactions are implemented. Live
-                    gateways are disabled.
+                    Received offline payments and local-test simulated
+                    transactions appear here. Live gateways are disabled.
                   </p>
                   {payments.map((p) => (
                     <div key={p.id} className="booking">
@@ -963,9 +963,9 @@ export default function Admin() {
               <section>
                 <h2>Staff permissions</h2>
                 <p>
-                  Enter the email of an existing account. The staff member must
-                  sign up first. Revoking permissions removes admin access, not
-                  the customer account.
+                  Enter an existing account email, or create the account in
+                  Customers first. Revoking permissions removes admin access,
+                  not the customer account.
                 </p>
                 <form
                   className="editor booking"

@@ -50,9 +50,9 @@ for (const mobile of [false, true])
       .click();
     const dialog = page.getByRole("dialog");
     await dialog
-      .getByLabel("Email address", { exact: true })
+      .getByLabel("Login email", { exact: true })
       .fill(`browser-${Date.now()}-${mobile}@wh.test`);
-    await dialog.getByLabel("Password", { exact: true }).fill(password);
+    await dialog.getByLabel("Login password", { exact: true }).fill(password);
     await dialog.getByLabel("Confirm password", { exact: true }).fill(password);
     await dialog
       .getByLabel("Signup phone", { exact: true })
