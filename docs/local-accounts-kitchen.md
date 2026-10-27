@@ -2,7 +2,7 @@
 
 ## Identity migration
 
-Migration 005 does not contact Firebase. It imports `bookings.guest_email` only when one normalized email maps to one legacy UID, retaining that UID. Passwords start empty and require email recovery or an owner-set temporary password.
+Migration 005 does not contact Firebase. It imports `bookings.guest_email` only when one normalized email maps to one legacy UID and that UID has exactly one historical email, retaining that UID. Passwords start empty and require email recovery or an owner-set temporary password.
 
 Use a server-side database review to locate ambiguous / missing mappings:
 
@@ -10,6 +10,8 @@ Use a server-side database review to locate ambiguous / missing mappings:
 SELECT lower(trim(guest_email)) AS email, array_agg(DISTINCT firebase_uid) AS legacy_keys
 FROM bookings WHERE guest_email IS NOT NULL
 GROUP BY lower(trim(guest_email)) HAVING count(DISTINCT firebase_uid)>1;
+SELECT firebase_uid,array_agg(DISTINCT lower(trim(guest_email))) AS emails FROM bookings
+WHERE guest_email IS NOT NULL GROUP BY firebase_uid HAVING count(DISTINCT lower(trim(guest_email)))>1;
 SELECT DISTINCT b.firebase_uid,b.guest_email FROM bookings b
 LEFT JOIN accounts a ON a.uid=b.firebase_uid WHERE a.uid IS NULL;
 SELECT s.firebase_uid FROM staff_permissions s

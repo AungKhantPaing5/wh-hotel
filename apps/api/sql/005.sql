@@ -9,10 +9,16 @@ CREATE TABLE accounts (
  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- Import only unambiguous booking identities. Their passwords require email recovery/admin setup.
-INSERT INTO accounts(uid,email)
- SELECT min(firebase_uid),lower(trim(guest_email)) FROM bookings
+WITH identities AS (
+ SELECT DISTINCT firebase_uid AS uid,lower(trim(guest_email)) AS email FROM bookings
  WHERE guest_email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
- GROUP BY lower(trim(guest_email)) HAVING count(DISTINCT firebase_uid)=1
+), unique_keys AS (
+ SELECT uid FROM identities GROUP BY uid HAVING count(DISTINCT email)=1
+), unique_emails AS (
+ SELECT email FROM identities GROUP BY email HAVING count(DISTINCT uid)=1
+)
+INSERT INTO accounts(uid,email)
+ SELECT i.uid,i.email FROM identities i JOIN unique_keys k USING(uid) JOIN unique_emails e USING(email)
  ON CONFLICT DO NOTHING;
 CREATE TABLE account_sessions (
  token_hash TEXT PRIMARY KEY,
