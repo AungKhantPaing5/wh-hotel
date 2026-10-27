@@ -19,9 +19,17 @@ import {
   Header,
 } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { applicationDefault, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { Pool } from "pg";
+import { db } from "./db";
+import {
+  user,
+  owner,
+  admin,
+  grants,
+  accountProfile,
+  permissionNames,
+} from "./accounts";
+import { AuthController } from "./auth-controller";
+import { KitchenController } from "./kitchen";
 import { randomUUID, createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, writeFile, stat } from "node:fs/promises";
@@ -31,37 +39,9 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import { validateStay } from "./dates";
 import { emailConfigured, startEmailWorker } from "./booking-email";
 
-if (
-  process.env.FIREBASE_AUTH_EMULATOR_HOST &&
-  (process.env.APP_ENV !== "local-test" ||
-    process.env.FIREBASE_PROJECT_ID !== "demo-wh-final")
-) {
-  throw new Error(
-    "Firebase emulator is allowed only in the isolated demo-wh-final local-test environment.",
-  );
-}
 const photoDirectory = resolve(process.env.PHOTO_DIRECTORY || "/app/uploads");
 const managedPhoto = (url: unknown): url is string =>
   typeof url === "string" && /^\/api\/photos\/[a-f0-9]{64}\.webp$/.test(url);
-const db = new Pool({ connectionString: process.env.DATABASE_URL });
-if (process.env.FIREBASE_PROJECT_ID) {
-  initializeApp({
-    credential: applicationDefault(),
-    projectId: process.env.FIREBASE_PROJECT_ID,
-  });
-}
-
-async function user(authorization?: string) {
-  if (!process.env.FIREBASE_PROJECT_ID)
-    throw new HttpException("Authentication is not configured.", 503);
-  if (!authorization?.startsWith("Bearer ")) throw new UnauthorizedException();
-  try {
-    return await getAuth().verifyIdToken(authorization.slice(7), true);
-  } catch {
-    throw new UnauthorizedException("Please sign in again.");
-  }
-}
-
 // Contact details are self-reported; never mark these numbers as Firebase-verified.
 async function contactPhone(
   uid: string,
@@ -104,7 +84,7 @@ function roomDetails(body: Record<string, unknown>) {
       (a) => typeof a !== "string" || !a.trim() || a.length > 80,
     ) ||
     !Array.isArray(photoUrls) ||
-    photoUrls.length > 8 ||
+    photoUrls.length > 40 ||
     photoUrls.some((url) => {
       if (managedPhoto(url)) return false;
       try {
@@ -134,40 +114,12 @@ function roomDetails(body: Record<string, unknown>) {
   };
 }
 
-const permissions = [
-  "bookings.read",
-  "bookings.manage",
-  "rooms.manage",
-  "payments.read",
-] as const;
-function isOwner(uid: string) {
-  return (process.env.ADMIN_UIDS || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .includes(uid);
-}
-async function grants(uid: string): Promise<string[]> {
-  if (isOwner(uid)) return [...permissions];
-  return (
-    (
-      await db.query(
-        "SELECT permissions FROM staff_permissions WHERE firebase_uid=$1",
-        [uid],
-      )
-    ).rows[0]?.permissions || []
+const permissions = permissionNames;
+async function isOwner(uid: string) {
+  return Boolean(
+    (await db.query("SELECT is_owner FROM accounts WHERE uid=$1", [uid]))
+      .rows[0]?.is_owner,
   );
-}
-async function admin(authorization?: string, permission = "bookings.read") {
-  const current = await user(authorization);
-  if (!(await grants(current.uid)).includes(permission))
-    throw new ForbiddenException();
-  return current;
-}
-async function owner(authorization?: string) {
-  const current = await user(authorization);
-  if (!isOwner(current.uid)) throw new ForbiddenException();
-  return current;
 }
 function id(value: string) {
   if (
@@ -228,17 +180,18 @@ class ApiController {
 
   @Get("me") async me(@Headers("authorization") authorization?: string) {
     const identity = await user(authorization);
-    const profile = await getAuth().getUser(identity.uid);
+    const profile = await accountProfile(identity.uid);
     const phone = await contactPhone(identity.uid, profile.phoneNumber);
     return {
       uid: identity.uid,
       email: profile.email,
       emailVerified: profile.emailVerified,
       phone,
-      needsEmail: !profile.email || !profile.emailVerified,
+      needsEmail: false,
       needsPhone: !phone,
       permissions: await grants(identity.uid),
-      isOwner: isOwner(identity.uid),
+      isOwner: await isOwner(identity.uid),
+      mustChangePassword: identity.must_change_password,
     };
   }
 
@@ -287,7 +240,11 @@ class ApiController {
     },
   ) {
     const identity = await user(authorization);
-    const profile = await getAuth().getUser(identity.uid);
+    const profile = await accountProfile(identity.uid);
+    if (identity.must_change_password)
+      throw new ForbiddenException(
+        "Change your temporary password before booking.",
+      );
     const guestPhone = await contactPhone(identity.uid, profile.phoneNumber);
     if (!guestPhone)
       throw new ForbiddenException(
@@ -415,10 +372,11 @@ class ApiController {
       { email?: string; phoneNumber?: string }
     >();
     for (let i = 0; i < ids.length; i += 100) {
-      const result = await getAuth().getUsers(
-        ids.slice(i, i + 100).map((uid) => ({ uid })),
+      const result = await db.query(
+        "SELECT uid,email FROM accounts WHERE uid=ANY($1::text[])",
+        [ids.slice(i, i + 100)],
       );
-      for (const user of result.users) profiles.set(user.uid, user);
+      for (const user of result.rows) profiles.set(user.uid, user);
     }
     return rows.map((row) => ({
       ...row,
@@ -511,6 +469,109 @@ class ApiController {
       throw error;
     } finally {
       client.release();
+    }
+  }
+  @Post("admin/bookings/:id/stay") async manageStay(
+    @Headers("authorization") authorization: string,
+    @Param("id") value: string,
+    @Body() body: { action?: string; paymentReference?: string },
+  ) {
+    const current = await admin(authorization, "stays.manage"),
+      bookingId = id(value),
+      c = await db.connect();
+    try {
+      await c.query("BEGIN");
+      const b = (
+        await c.query("SELECT * FROM bookings WHERE id=$1 FOR UPDATE", [
+          bookingId,
+        ])
+      ).rows[0];
+      if (!b) throw new NotFoundException();
+      if (body.action === "confirm-payment") {
+        await admin(authorization, "bookings.manage");
+        if (
+          b.status !== "AWAITING_PAYMENT" ||
+          new Date(b.expires_at).getTime() <= Date.now() ||
+          typeof body.paymentReference !== "string" ||
+          !body.paymentReference.trim() ||
+          body.paymentReference.length > 200
+        )
+          throw new BadRequestException(
+            "Use an active approved booking and enter the actual cash/bank receipt reference.",
+          );
+        await c.query(
+          "INSERT INTO payment_transactions(id,booking_id,provider,amount_minor,currency,status) VALUES($1,$2,'MANUAL',$3,$4,'SUCCEEDED')",
+          [randomUUID(), bookingId, b.total_amount_minor, b.currency],
+        );
+        await c.query(
+          "UPDATE bookings SET status='CONFIRMED',expires_at=NULL WHERE id=$1",
+          [bookingId],
+        );
+      } else if (body.action === "check-in") {
+        if (b.status !== "CONFIRMED" || b.checked_in_at || b.checked_out_at)
+          throw new BadRequestException(
+            "Only a confirmed reservation can check in once.",
+          );
+        const valid = (
+          await c.query(
+            "SELECT $1::date <= (now() AT TIME ZONE 'Asia/Yangon')::date AND $2::date > (now() AT TIME ZONE 'Asia/Yangon')::date AS valid",
+            [b.check_in, b.check_out],
+          )
+        ).rows[0].valid;
+        if (!valid)
+          throw new BadRequestException(
+            "Check-in is allowed only within the reserved stay dates (Myanmar time).",
+          );
+        await c.query(
+          "UPDATE bookings SET checked_in_at=now(),checked_in_by=$2 WHERE id=$1",
+          [bookingId, current.uid],
+        );
+      } else if (body.action === "check-out") {
+        if (!b.checked_in_at || b.checked_out_at)
+          throw new BadRequestException(
+            "The guest is not currently checked in.",
+          );
+        if (
+          (
+            await c.query(
+              "SELECT 1 FROM food_orders WHERE booking_id=$1 AND status IN ('PLACED','PREPARING','READY')",
+              [bookingId],
+            )
+          ).rowCount
+        )
+          throw new BadRequestException(
+            "Deliver or cancel open kitchen orders before check-out.",
+          );
+        await c.query(
+          "UPDATE bookings SET checked_out_at=now(),checked_out_by=$2 WHERE id=$1",
+          [bookingId, current.uid],
+        );
+      } else
+        throw new BadRequestException(
+          "Choose confirm-payment, check-in or check-out.",
+        );
+      await c.query(
+        "INSERT INTO audit_logs(actor_uid,action,booking_id) VALUES($1,$2,$3)",
+        [current.uid, "stay." + body.action, bookingId],
+      );
+      await c.query(
+        "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
+        [
+          current.uid,
+          "stay." + body.action,
+          JSON.stringify({
+            bookingId,
+            paymentReference: body.paymentReference,
+          }),
+        ],
+      );
+      await c.query("COMMIT");
+      return { status: "saved" };
+    } catch (e) {
+      await c.query("ROLLBACK");
+      throw e;
+    } finally {
+      c.release();
     }
   }
   @Get("admin/room-types") async adminTypes(
@@ -706,8 +767,10 @@ class ApiController {
         )
       ).rows[0];
       if (!room) throw new NotFoundException();
-      if (!room.photo_urls.includes(url) && room.photo_urls.length >= 8)
-        throw new BadRequestException("A room type can have at most 8 photos.");
+      if (!room.photo_urls.includes(url) && room.photo_urls.length >= 40)
+        throw new BadRequestException(
+          "A room type can have at most 40 photos.",
+        );
       await mkdir(photoDirectory, { recursive: true });
       // Content-addressed output is safe to share between room types and retries.
       try {
@@ -872,12 +935,11 @@ class ApiController {
     ).rows;
     const emails = new Map<string, string | undefined>();
     for (let start = 0; start < rows.length; start += 100) {
-      const result = await getAuth().getUsers(
-        rows
-          .slice(start, start + 100)
-          .map((row) => ({ uid: row.firebase_uid })),
+      const result = await db.query(
+        "SELECT uid,email FROM accounts WHERE uid=ANY($1::text[])",
+        [rows.slice(start, start + 100).map((row) => row.firebase_uid)],
       );
-      for (const user of result.users) emails.set(user.uid, user.email);
+      for (const user of result.rows) emails.set(user.uid, user.email);
     }
     return rows.map((row) => ({
       ...row,
@@ -901,9 +963,15 @@ class ApiController {
       );
     let staffUser;
     try {
-      staffUser = await getAuth().getUserByEmail(
-        body.email.trim().toLowerCase(),
-      );
+      staffUser = (
+        await db.query("SELECT * FROM accounts WHERE email=$1", [
+          body.email.trim().toLowerCase(),
+        ])
+      ).rows[0];
+      if (!staffUser)
+        throw new NotFoundException(
+          "Create this staff account in Accounts first.",
+        );
     } catch (error) {
       if ((error as { code?: string }).code === "auth/user-not-found")
         throw new NotFoundException(
@@ -911,14 +979,25 @@ class ApiController {
         );
       throw error;
     }
-    if (staffUser.disabled || isOwner(staffUser.uid))
+    if (staffUser.disabled || (await isOwner(staffUser.uid)))
       throw new BadRequestException("Choose an active non-owner account.");
     const client = await db.connect();
     try {
       await client.query("BEGIN");
       await client.query(
         "INSERT INTO staff_permissions(firebase_uid,permissions) VALUES($1,$2) ON CONFLICT(firebase_uid) DO UPDATE SET permissions=$2,updated_at=now()",
-        [staffUser.uid, [...new Set(body.permissions)]],
+        [
+          staffUser.uid,
+          [
+            ...new Set([
+              ...body.permissions,
+              ...(body.permissions.includes("stays.manage") ||
+              body.permissions.includes("bookings.manage")
+                ? ["bookings.read"]
+                : []),
+            ]),
+          ],
+        ],
       );
       await client.query(
         "INSERT INTO admin_activity(actor_uid,action,details) VALUES($1,$2,$3)",
@@ -947,7 +1026,7 @@ class ApiController {
     @Param("uid") uid: string,
   ) {
     const current = await owner(authorization);
-    if (isOwner(uid))
+    if (await isOwner(uid))
       throw new BadRequestException(
         "Owner access is configured on the server.",
       );
@@ -987,7 +1066,8 @@ class ApiController {
     await owner(authorization);
     return {
       hotel: "WN",
-      authConfigured: !!process.env.FIREBASE_PROJECT_ID,
+      authConfigured: true,
+      authProvider: "LOCAL_POSTGRESQL",
       localTest: process.env.APP_ENV === "local-test",
       livePayments: false,
       paymentMode:
@@ -1001,12 +1081,7 @@ class ApiController {
     @Headers("authorization") authorization: string,
     @Param("id") bookingId: string,
   ) {
-    if (
-      process.env.APP_ENV !== "local-test" ||
-      process.env.FIREBASE_PROJECT_ID !== "demo-wh-final" ||
-      !process.env.FIREBASE_AUTH_EMULATOR_HOST
-    )
-      throw new NotFoundException();
+    if (process.env.APP_ENV !== "local-test") throw new NotFoundException();
     const identity = await user(authorization);
     const client = await db.connect();
     try {
@@ -1068,7 +1143,7 @@ class ApiController {
   }
 }
 
-@Module({ controllers: [ApiController] })
+@Module({ controllers: [ApiController, AuthController, KitchenController] })
 class AppModule {}
 
 async function bootstrap() {
@@ -1077,10 +1152,51 @@ async function bootstrap() {
     rawBody: true,
   });
   app.useBodyParser("json", { limit: "8mb" });
-  app.enableCors({ origin: process.env.WEB_ORIGIN || "http://localhost:3000" });
+  app.use((req: any, res: any, next: () => void) => {
+    res.setHeader("Cache-Control", "no-store");
+    const scope =
+      req.path.startsWith("/v1/admin") || req.headers["x-wn-scope"] === "admin"
+        ? "admin"
+        : "customer";
+    const cookie = String(req.headers.cookie || "")
+      .split(";")
+      .map((s: string) => s.trim())
+      .find((s: string) => s.startsWith(`wn_${scope}=`))
+      ?.split("=")[1];
+    // Browser mutations require an explicit custom header and same-origin CORS policy.
+    if (
+      !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+      !req.headers.authorization
+    ) {
+      const origin = req.headers.origin;
+      if (
+        req.headers["x-wn-request"] !== "1" ||
+        (origin &&
+          origin !== (process.env.WEB_ORIGIN || "http://localhost:3000"))
+      )
+        return res.status(403).json({ message: "Invalid request origin." });
+    }
+    if (!req.headers.authorization && cookie)
+      req.headers.authorization = `Bearer ${cookie}`;
+    next();
+  });
+  app.enableCors({
+    origin: process.env.WEB_ORIGIN || "http://localhost:3000",
+    credentials: true,
+  });
   app.enableShutdownHooks();
   await app.listen(4000, "0.0.0.0");
-  startEmailWorker(db, (uid) => getAuth().getUser(uid));
+  startEmailWorker(db, (uid) => accountProfile(uid));
+  const cleanup = setInterval(
+    () =>
+      void Promise.all([
+        db.query("DELETE FROM account_sessions WHERE expires_at<now()"),
+        db.query("DELETE FROM password_resets WHERE expires_at<now()"),
+        db.query("DELETE FROM auth_limits WHERE expires_at<now()"),
+      ]).catch(() => console.error("Session cleanup will retry.")),
+    1800000,
+  );
+  cleanup.unref();
   // Expire holds periodically; booking transactions also expire them atomically.
   const timer = setInterval(() => {
     void db

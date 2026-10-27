@@ -1,7 +1,7 @@
 name: WH Deploy
 on:
   workflow_run:
-    workflows: [WH CI]
+    workflows: [WH Local Acceptance]
     types: [completed]
     branches: [main]
 permissions:

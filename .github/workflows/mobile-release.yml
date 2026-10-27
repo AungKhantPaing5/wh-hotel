@@ -24,12 +24,6 @@ jobs:
       EXPO_NO_TELEMETRY: '1'
       EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
       EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
-      WH_FIREBASE_NATIVE: ${{ vars.WH_FIREBASE_NATIVE || 'false' }}
-      EXPO_PUBLIC_AUTH_ENABLED: ${{ vars.EXPO_PUBLIC_AUTH_ENABLED || 'false' }}
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
-      GOOGLE_IOS_URL_SCHEME: ${{ vars.GOOGLE_IOS_URL_SCHEME }}
-      EXPO_PUBLIC_APPLE_SERVICE_ID: ${{ vars.EXPO_PUBLIC_APPLE_SERVICE_ID }}
-      EXPO_PUBLIC_APPLE_REDIRECT_URI: ${{ vars.EXPO_PUBLIC_APPLE_REDIRECT_URI }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,27 +37,12 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       - run: npm ci
       - run: npm run typecheck && npm test
-      - name: Write native public Firebase config
-        env:
-          ANDROID_JSON: ${{ secrets.EXPO_ANDROID_GOOGLE_SERVICES_JSON }}
-          IOS_PLIST: ${{ secrets.EXPO_IOS_GOOGLE_SERVICES_PLIST }}
-          BUILD_PROFILE: ${{ inputs.profile }}
+      - name: Validate release configuration
         run: |
           node --input-type=module <<'JS'
           import fs from 'node:fs';
-          if (!process.env.EAS_PROJECT_ID) throw new Error('Configure EAS_PROJECT_ID first.');
-          if (process.env.BUILD_PROFILE === 'production') {
-            if (process.env.EXPO_PUBLIC_AUTH_ENABLED !== 'true' || !process.env.EXPO_PUBLIC_API_URL?.startsWith('https://')) throw new Error('Production requires live HTTPS API and native authentication.');
-          }
-          const names = ['EAS_PROJECT_ID', 'WH_FIREBASE_NATIVE', 'EXPO_PUBLIC_AUTH_ENABLED', 'EXPO_PUBLIC_API_URL', 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID', 'GOOGLE_IOS_URL_SCHEME', 'EXPO_PUBLIC_APPLE_SERVICE_ID', 'EXPO_PUBLIC_APPLE_REDIRECT_URI'];
-          fs.writeFileSync('.env.local', names.map(name => `${name}=${JSON.stringify(process.env[name] || '')}`).join('\n') + '\n');
-          if (process.env.WH_FIREBASE_NATIVE === 'true') {
-            if (!process.env.ANDROID_JSON || !process.env.IOS_PLIST) throw new Error('Both native Firebase config files are required.');
-            const android = JSON.parse(process.env.ANDROID_JSON);
-            if (android.private_key || android.type === 'service_account') throw new Error('Use client config, never Firebase Admin credentials.');
-            fs.writeFileSync('google-services.json', process.env.ANDROID_JSON);
-            fs.writeFileSync('GoogleService-Info.plist', process.env.IOS_PLIST);
-          }
+          if(!process.env.EAS_PROJECT_ID || !process.env.EXPO_PUBLIC_API_URL?.startsWith('https://'))throw Error('Set EAS_PROJECT_ID and an HTTPS EXPO_PUBLIC_API_URL.');
+          fs.writeFileSync('.env.local',['EAS_PROJECT_ID','EXPO_PUBLIC_API_URL'].map(n=>`${n}=${JSON.stringify(process.env[n])}`).join('\n'));
           JS
       - name: Build signed app with configured EAS credentials
         run: eas build --platform '${{ inputs.platform }}' --profile '${{ inputs.profile }}' --non-interactive --wait

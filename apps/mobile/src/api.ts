@@ -46,7 +46,7 @@ export class WhApi {
     const base = runtime.localTest
       ? validateLocalUrl(this.base)
       : apiBase(this.base);
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", "X-WN-Request": "1" };
     if (options.authenticated) {
       const token = await this.token();
       if (!token) throw new ApiError("Sign in first.", 401);

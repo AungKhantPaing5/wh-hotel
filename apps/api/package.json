@@ -13,7 +13,6 @@
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
-    "firebase-admin": "^14.5.0",
     "nodemailer": "^10.1.0",
     "pg": "^8.16.0",
     "reflect-metadata": "^0.2.2",
@@ -21,6 +20,7 @@
     "sharp": "0.35.5"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.15.0",

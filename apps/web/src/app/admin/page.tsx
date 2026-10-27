@@ -1,8 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { api, auth } from "../../lib/admin-firebase";
+import { signInWithEmailAndPassword, signOut } from "../../lib/session";
+import {
+  AccountsPanel,
+  KitchenAdmin,
+  ChangePassword,
+} from "../../components/hotel-tools";
+import { api, auth } from "../../lib/admin-session";
 type Booking = {
   id: string;
   status: string;
@@ -17,6 +22,8 @@ type Booking = {
   room_type: string;
   email_status: string | null;
   email_error: string | null;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
 };
 type RoomType = {
   id: number;
@@ -51,6 +58,8 @@ const availablePermissions = [
   "bookings.manage",
   "rooms.manage",
   "payments.read",
+  "stays.manage",
+  "kitchen.manage",
 ];
 const localTest = process.env.NEXT_PUBLIC_LOCAL_TEST === "true";
 function RoomEditor({
@@ -63,7 +72,7 @@ function RoomEditor({
   room: RoomType;
   busy: boolean;
   save: (body: unknown) => void;
-  upload: (file: File) => void;
+  upload: (files: File[]) => void;
   create?: boolean;
 }) {
   const [name, setName] = useState(room.name),
@@ -166,18 +175,20 @@ function RoomEditor({
             Upload room photo
             <input
               type="file"
+              multiple
               accept="image/jpeg,image/png,image/webp"
-              disabled={busy || room.photo_urls.length >= 8}
+              disabled={busy || room.photo_urls.length >= 40}
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) upload(file);
+                const files = Array.from(event.target.files || []);
+                if (files.length) upload(files);
                 event.target.value = "";
               }}
             />
           </label>
           <p>
-            JPEG, PNG or WebP, up to 5 MiB and 20 megapixels. Maximum 8 photos.
-            Upload saves immediately; save any other edits first.
+            JPEG, PNG or WebP, up to 5 MiB and 20 megapixels. Maximum 40 photos.
+            Select multiple files to upload. Upload saves immediately; save any
+            other edits first.
           </p>
           <div className="row">
             {room.photo_urls.map((url) => (
@@ -291,6 +302,7 @@ export default function Admin() {
   const [profile, setProfile] = useState<{
     permissions: string[];
     isOwner: boolean;
+    mustChangePassword?: boolean;
   } | null>(null);
   const [message, setMessage] = useState(
       "Sign in with an authorized WN account.",
@@ -355,6 +367,7 @@ export default function Admin() {
       throw new Error("This account does not have administration access.");
     }
     setProfile(p);
+    if (p.mustChangePassword) return;
     setRows(
       p.permissions.includes("bookings.read")
         ? await api("admin/bookings", {}, true)
@@ -405,8 +418,12 @@ export default function Admin() {
           {profile?.isOwner && <Link href="/developer">System status</Link>}
         </nav>
       </header>
-      <main>
-        <h1>WN Hotel administration</h1>
+      <main className="admin-shell">
+        <div className="dashboard-intro">
+          <div className="eyebrow">WN OPERATIONS</div>
+          <h1>WN Hotel administration</h1>
+          <p>Every stay, every detail. One calm workspace.</p>
+        </div>
         {localTest && (
           <div className="notice">
             LOCAL TEST ONLY · Fake accounts, simulated payment, no real SMS or
@@ -487,6 +504,17 @@ export default function Admin() {
         )}
         <p role="status">{message}</p>
         {profile && (
+          <ChangePassword
+            api={api}
+            after={async () => {
+              await signOut(auth());
+              setProfile(null);
+              signedInHere.current = false;
+            }}
+            required={Boolean(profile.mustChangePassword)}
+          />
+        )}
+        {profile && !profile.mustChangePassword && (
           <>
             <div className="row">
               {[
@@ -497,7 +525,10 @@ export default function Admin() {
                 ...(profile.permissions.includes("payments.read")
                   ? ["Payments"]
                   : []),
-                ...(profile.isOwner ? ["Staff"] : []),
+                ...(profile.permissions.includes("kitchen.manage")
+                  ? ["Kitchen"]
+                  : []),
+                ...(profile.isOwner ? ["Staff", "Customers"] : []),
               ].map((name) => (
                 <button
                   className={tab === name ? "" : "secondary"}
@@ -508,6 +539,13 @@ export default function Admin() {
                 </button>
               ))}
             </div>
+            {tab === "Customers" && profile.isOwner && (
+              <AccountsPanel api={api} />
+            )}
+            {tab === "Kitchen" &&
+              profile.permissions.includes("kitchen.manage") && (
+                <KitchenAdmin api={api} isOwner={profile.isOwner} />
+              )}
             {tab === "Bookings" && (
               <section>
                 <h2>Booking requests</h2>
@@ -589,6 +627,71 @@ export default function Admin() {
                             : "Queue approval email"}
                         </button>
                       )}
+                    {profile.permissions.includes("stays.manage") && (
+                      <div className="stay-actions">
+                        <p className="status-chip">
+                          {b.checked_out_at
+                            ? "Checked out"
+                            : b.checked_in_at
+                              ? "Checked in"
+                              : "Not checked in"}
+                        </p>
+                        {b.status === "AWAITING_PAYMENT" &&
+                          profile.permissions.includes("bookings.manage") && (
+                            <button
+                              disabled={busy}
+                              onClick={() => {
+                                const paymentReference = window.prompt(
+                                  "Actual cash/bank receipt reference (record payment only after receiving it):",
+                                );
+                                if (paymentReference)
+                                  void run(async () => {
+                                    await api(
+                                      `admin/bookings/${b.id}/stay`,
+                                      {
+                                        method: "POST",
+                                        body: JSON.stringify({
+                                          action: "confirm-payment",
+                                          paymentReference,
+                                        }),
+                                      },
+                                      true,
+                                    );
+                                    await load();
+                                  });
+                              }}
+                            >
+                              Record received payment
+                            </button>
+                          )}
+                        {b.status === "CONFIRMED" && !b.checked_out_at && (
+                          <button
+                            disabled={busy}
+                            onClick={() =>
+                              void run(async () => {
+                                await api(
+                                  `admin/bookings/${b.id}/stay`,
+                                  {
+                                    method: "POST",
+                                    body: JSON.stringify({
+                                      action: b.checked_in_at
+                                        ? "check-out"
+                                        : "check-in",
+                                    }),
+                                  },
+                                  true,
+                                );
+                                await load();
+                              })
+                            }
+                          >
+                            {b.checked_in_at
+                              ? "Check out guest"
+                              : "Check in guest"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {b.status === "PENDING_APPROVAL" &&
                       profile.permissions.includes("bookings.manage") && (
                         <div className="row">
@@ -660,39 +763,43 @@ export default function Admin() {
                         key={JSON.stringify(room)}
                         room={room}
                         busy={busy}
-                        upload={(file) =>
+                        upload={(files) =>
                           void run(async () => {
-                            if (
-                              ![
-                                "image/jpeg",
-                                "image/png",
-                                "image/webp",
-                              ].includes(file.type) ||
-                              file.size > 5 * 1024 * 1024
-                            )
-                              throw new Error(
-                                "Choose a JPEG, PNG or WebP image up to 5 MiB.",
+                            for (const file of files) {
+                              if (
+                                ![
+                                  "image/jpeg",
+                                  "image/png",
+                                  "image/webp",
+                                ].includes(file.type) ||
+                                file.size > 5 * 1024 * 1024
+                              )
+                                throw new Error(
+                                  "Choose a JPEG, PNG or WebP image up to 5 MiB.",
+                                );
+                              const data = await new Promise<string>(
+                                (resolve, reject) => {
+                                  const reader = new FileReader();
+                                  reader.onerror = () =>
+                                    reject(
+                                      new Error("Cannot read this photo."),
+                                    );
+                                  reader.onload = () =>
+                                    resolve(
+                                      String(reader.result).split(",")[1] || "",
+                                    );
+                                  reader.readAsDataURL(file);
+                                },
                               );
-                            const data = await new Promise<string>(
-                              (resolve, reject) => {
-                                const reader = new FileReader();
-                                reader.onerror = () =>
-                                  reject(new Error("Cannot read this photo."));
-                                reader.onload = () =>
-                                  resolve(
-                                    String(reader.result).split(",")[1] || "",
-                                  );
-                                reader.readAsDataURL(file);
-                              },
-                            );
-                            await api(
-                              `admin/room-types/${room.id}/photos`,
-                              {
-                                method: "POST",
-                                body: JSON.stringify({ data }),
-                              },
-                              true,
-                            );
+                              await api(
+                                `admin/room-types/${room.id}/photos`,
+                                {
+                                  method: "POST",
+                                  body: JSON.stringify({ data }),
+                                },
+                                true,
+                              );
+                            }
                             await load();
                           })
                         }

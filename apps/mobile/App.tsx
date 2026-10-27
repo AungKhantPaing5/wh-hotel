@@ -21,6 +21,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import * as SecureStore from "expo-secure-store";
 import * as Crypto from "expo-crypto";
 import { StatusBar } from "expo-status-bar";
+import { NativeKitchen } from "./src/NativeKitchen";
 import { WhApi } from "./src/api";
 import { auth, localTestMode, type Identity } from "./src/auth";
 import {
@@ -39,7 +40,7 @@ import {
 } from "./src/domain";
 
 const API_URL = runtime.apiUrl;
-type Tab = "Explore" | "My bookings" | "Account";
+type Tab = "Explore" | "My bookings" | "Kitchen" | "Account";
 function Button({
   title,
   onPress,
@@ -179,6 +180,9 @@ function Main() {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [accountMode, setAccountMode] = useState<"login" | "signup" | "reset">(
     "login",
   );
@@ -270,10 +274,12 @@ function Main() {
     if (API_URL) void run(() => loadRooms());
   }, []);
   useEffect(() => {
-    if (tab === "My bookings" && user && API_URL) void run(loadBookings);
+    if ((tab === "My bookings" || tab === "Kitchen") && user && API_URL)
+      void run(loadBookings);
   }, [tab, user?.uid]);
   useEffect(() => {
-    if (tab !== "My bookings" || !user || !API_URL) return;
+    if ((tab !== "My bookings" && tab !== "Kitchen") || !user || !API_URL)
+      return;
     const timer = setInterval(() => {
       void loadBookings().catch(() => {});
     }, 15000);
@@ -774,6 +780,15 @@ function Main() {
               )}
             </>
           )}
+          {tab === "Kitchen" && (
+            <NativeKitchen
+              api={api}
+              user={user}
+              bookings={bookings}
+              refreshBookings={loadBookings}
+              onLogin={() => setTab("Account")}
+            />
+          )}
           {tab === "Account" && (
             <>
               <Text style={s.titleDark}>
@@ -785,9 +800,8 @@ function Main() {
               {!auth ? (
                 <View style={s.card}>
                   <Text style={s.body}>
-                    Authentication is disabled in this preview. Configure
-                    Firebase and install a native development build to test
-                    email and social login.
+                    Authentication is disabled in this preview. Set the hotel
+                    API URL and install this app to use email login.
                   </Text>
                 </View>
               ) : (
@@ -841,11 +855,7 @@ function Main() {
                       </Text>
                       <Text style={s.body}>
                         Email:{" "}
-                        {user.email
-                          ? user.emailVerified
-                            ? "Verified"
-                            : "Verification needed"
-                          : "Add an email below"}
+                        {user.email ? "Saved" : "Contact hotel administration"}
                       </Text>
                       {!user.phone && (
                         <Text style={s.warning}>
@@ -853,58 +863,44 @@ function Main() {
                           account. No OTP is required.
                         </Text>
                       )}
-                      {!user.email && (
-                        <>
-                          <Text style={s.warning}>
-                            Complete your account: add an email and password,
-                            then verify your email.
-                          </Text>
-                          <Field
-                            label="Email"
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                          />
-                          <Field
-                            label="New password"
-                            value={password}
-                            onChangeText={setPassword}
-                            secure
-                          />
-                          <Button
-                            title="Link email and send verification"
-                            disabled={busy}
-                            onPress={() =>
-                              void run(async () => {
-                                await auth!.addEmail(email, password);
-                                setPassword("");
-                                Alert.alert(
-                                  "Check your inbox",
-                                  "Open the verification link, then refresh your account.",
-                                );
-                              })
-                            }
-                          />
-                        </>
-                      )}
-                      {user.email && !user.emailVerified && (
-                        <Button
-                          title="Send verification email"
-                          secondary
-                          disabled={busy}
-                          onPress={() =>
-                            void run(async () => {
-                              await auth!.verifyEmail();
-                              Alert.alert("Verification email sent");
-                            })
-                          }
-                        />
-                      )}
                       <Button
-                        title="Refresh verification status"
+                        title="Refresh account"
                         secondary
                         disabled={busy}
                         onPress={() => void run(() => auth!.refresh())}
+                      />
+                      {user.mustChangePassword && (
+                        <Text style={s.warning}>
+                          Change your temporary password before booking or
+                          ordering food.
+                        </Text>
+                      )}
+                      <Field
+                        label="Current password"
+                        secure
+                        value={currentPassword}
+                        onChangeText={setCurrentPassword}
+                      />
+                      <Field
+                        label="New password (12+ characters)"
+                        secure
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                      />
+                      <Button
+                        title="Change password"
+                        disabled={busy}
+                        onPress={() =>
+                          void run(async () => {
+                            await auth.changePassword(
+                              currentPassword,
+                              newPassword,
+                            );
+                            setCurrentPassword("");
+                            setNewPassword("");
+                            Alert.alert("Password changed", "Sign in again.");
+                          })
+                        }
                       />
                       <Button
                         title="Sign out"
@@ -981,6 +977,15 @@ function Main() {
                       )}
                       {accountMode === "signup" && (
                         <Field
+                          label="Phone number (09, 11 digits)"
+                          value={phone}
+                          onChangeText={setPhone}
+                          keyboardType="phone-pad"
+                          maxLength={11}
+                        />
+                      )}
+                      {accountMode === "signup" && (
+                        <Field
                           label="Confirm password"
                           value={confirmPassword}
                           onChangeText={setConfirmPassword}
@@ -1010,16 +1015,17 @@ function Main() {
                             }
                             if (
                               accountMode === "signup" &&
-                              (password.length < 6 ||
+                              (password.length < 12 ||
                                 password !== confirmPassword)
                             )
                               throw new Error(
-                                "Use at least 6 characters and matching passwords.",
+                                "Use at least 12 characters and matching passwords.",
                               );
                             await auth!.email(
                               email.trim(),
                               password,
                               accountMode === "signup",
+                              phone,
                             );
                             setPassword("");
                             setConfirmPassword("");
@@ -1041,20 +1047,41 @@ function Main() {
                             : "Forgot password?"}
                         </Text>
                       </Pressable>
-                      {accountMode !== "reset" && (
+                      {accountMode === "reset" && (
                         <>
-                          <Text style={s.divider}>OR CONTINUE WITH</Text>
-                          <Button
-                            title="Continue with Google"
-                            secondary
-                            disabled={busy || !authReady}
-                            onPress={() => void run(() => auth!.google())}
+                          <Text style={s.body}>
+                            Paste the recovery code from your email. You can
+                            reset your password here in the app.
+                          </Text>
+                          <Field
+                            label="Recovery code"
+                            value={recoveryCode}
+                            onChangeText={setRecoveryCode}
+                          />
+                          <Field
+                            label="New password (12+ characters)"
+                            value={newPassword}
+                            onChangeText={setNewPassword}
+                            secure
                           />
                           <Button
-                            title="Continue with Apple"
-                            secondary
-                            disabled={busy || !authReady}
-                            onPress={() => void run(() => auth!.apple())}
+                            title="Reset password"
+                            disabled={busy}
+                            onPress={() =>
+                              void run(async () => {
+                                await auth.confirmReset(
+                                  recoveryCode.trim(),
+                                  newPassword,
+                                );
+                                setRecoveryCode("");
+                                setNewPassword("");
+                                setAccountMode("login");
+                                Alert.alert(
+                                  "Password reset",
+                                  "Sign in with your new password.",
+                                );
+                              })
+                            }
                           />
                         </>
                       )}
@@ -1128,31 +1155,37 @@ function Main() {
         </Modal>
       </KeyboardAvoidingView>
       <View style={s.tabs}>
-        {(["Explore", "My bookings", "Account"] as Tab[]).map((item) => (
-          <Pressable
-            key={item}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: tab === item }}
-            onPress={() => {
-              setTab(item);
-              setError("");
-            }}
-            style={[s.tab, tab === item && s.activeTab]}
-          >
-            <Text
-              style={[
-                s.tabText,
-                tab === item && { color: "#174b3f", fontWeight: "700" },
-              ]}
+        {(["Explore", "My bookings", "Kitchen", "Account"] as Tab[]).map(
+          (item) => (
+            <Pressable
+              key={item}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab === item }}
+              onPress={() => {
+                setTab(item);
+                setError("");
+              }}
+              style={[s.tab, tab === item && s.activeTab]}
             >
-              <Text style={s.navIcon}>
-                {item === "Explore" ? "⌂" : item === "My bookings" ? "▤" : "◉"}
-                {"\n"}
+              <Text
+                style={[
+                  s.tabText,
+                  tab === item && { color: "#174b3f", fontWeight: "700" },
+                ]}
+              >
+                <Text style={s.navIcon}>
+                  {item === "Explore"
+                    ? "⌂"
+                    : item === "My bookings"
+                      ? "▤"
+                      : "◉"}
+                  {"\n"}
+                </Text>
+                {item === "Account" && !user ? "Login" : item}
               </Text>
-              {item === "Account" && !user ? "Login" : item}
-            </Text>
-          </Pressable>
-        ))}
+            </Pressable>
+          ),
+        )}
       </View>
     </SafeAreaView>
   );

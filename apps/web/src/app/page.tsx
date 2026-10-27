@@ -1,18 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import {
-  GoogleAuthProvider,
-  OAuthProvider,
-  signInWithPopup,
   signOut,
-  verifyBeforeUpdateEmail,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  sendEmailVerification,
   sendPasswordResetEmail,
   onAuthStateChanged,
-} from "firebase/auth";
-import { api, auth } from "../lib/firebase";
+  api,
+  auth,
+} from "../lib/session";
+import { GuestKitchen, ChangePassword } from "../components/hotel-tools";
 
 type Room = {
   id: number;
@@ -33,11 +30,14 @@ type Booking = {
   total_amount_minor: string;
   room_number?: string;
   room_type?: string;
+  checked_in_at?: string;
+  checked_out_at?: string;
 };
 type Profile = {
   uid: string;
   needsEmail: boolean;
   needsPhone: boolean;
+  mustChangePassword?: boolean;
   phone: string | null;
 };
 type AuthView = "login" | "signup" | "reset" | "contact";
@@ -85,6 +85,7 @@ function Icon({ name }: { name: "arrow" | "close" | "eye" | "mail" | "user" }) {
   );
 }
 export default function Home() {
+  const [photoIndex, setPhotoIndex] = useState<Record<number, number>>({});
   const [bookingRoom, setBookingRoom] = useState<number | null>(null),
     [bookingMessage, setBookingMessage] = useState("");
   const bookingPanel = useRef<HTMLFormElement | null>(null);
@@ -213,6 +214,16 @@ export default function Home() {
       });
     }
   }, [account]);
+  useEffect(() => {
+    if (!signedIn || !account) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible")
+        void api("bookings", {}, true)
+          .then(setBookings)
+          .catch(() => {});
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [signedIn, account]);
   function openAuth(view: AuthView) {
     setAuthMessage("");
     setPassword("");
@@ -273,30 +284,14 @@ export default function Home() {
         auth(),
         email.trim(),
         password,
+        phone,
       );
-      let notice =
-        "Your account is ready. Please add your phone number and check your verification email.";
-      try {
-        await sendEmailVerification(result.user);
-      } catch {
-        notice =
-          "Account created. The verification email could not be sent. Use Send verification email below to try again.";
-      }
       await finishLogin();
-      setMessage(notice);
+      setMessage("Your account is ready.");
     } else {
       await signInWithEmailAndPassword(auth(), email.trim(), password);
       await finishLogin();
     }
-  }
-  async function socialLogin(provider: "google" | "apple") {
-    await signInWithPopup(
-      auth(),
-      provider === "google"
-        ? new GoogleAuthProvider()
-        : new OAuthProvider("apple.com"),
-    );
-    await finishLogin();
   }
   async function savePhone() {
     if (phone.length !== 11 || !/^09[0-9]{9}$/.test(phone))
@@ -411,6 +406,24 @@ export default function Home() {
               >
                 <Icon name="user" />
                 My bookings
+              </button>
+              <button
+                className="nav-login"
+                onClick={() => {
+                  setAccount(true);
+                  void task(async () => {
+                    await refreshProfile();
+                    setTimeout(
+                      () =>
+                        document
+                          .getElementById("guest-kitchen")
+                          ?.scrollIntoView({ behavior: "smooth" }),
+                      150,
+                    );
+                  });
+                }}
+              >
+                Kitchen
               </button>
               <button
                 className="nav-signup"
@@ -590,42 +603,10 @@ export default function Home() {
                   </span>
                   <span>
                     {profile.needsEmail
-                      ? "Email verification required"
-                      : "Email verified."}
+                      ? "Contact administration"
+                      : "Email saved."}
                   </span>
                 </div>
-                {profile.needsEmail && (
-                  <div className="verification-block">
-                    <h3>Verify your email</h3>
-                    <p>Keep your contact information complete for your stay.</p>
-                    <div className="row">
-                      <input
-                        aria-label="Email"
-                        type="email"
-                        placeholder="Your email address"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                      />
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          void task(async () => {
-                            const u = auth().currentUser;
-                            if (!u) throw new Error("Sign in first.");
-                            if (email.trim() && email.trim() !== u.email)
-                              await verifyBeforeUpdateEmail(u, email.trim());
-                            else await sendEmailVerification(u);
-                            setMessage(
-                              "Verification email sent. Follow the link, then refresh your profile.",
-                            );
-                          })
-                        }
-                      >
-                        Send verification email
-                      </button>
-                    </div>
-                  </div>
-                )}
                 {profile.needsPhone && (
                   <div className="verification-block">
                     <h3>Add your phone number</h3>
@@ -640,6 +621,12 @@ export default function Home() {
                 )}
               </>
             )}
+            <ChangePassword
+              api={api}
+              after={logout}
+              required={Boolean(profile?.mustChangePassword)}
+            />
+            <GuestKitchen api={api} bookings={bookings} />
             <h3 className="bookings-heading">Your bookings</h3>
             {bookings.length === 0 ? (
               <p className="empty-state">
@@ -716,7 +703,7 @@ export default function Home() {
                   <div className="room-image">
                     {room.photo_urls?.[0] ? (
                       <img
-                        src={room.photo_urls[0]}
+                        src={room.photo_urls[photoIndex[room.id] || 0]}
                         alt={room.name}
                         loading="lazy"
                       />
@@ -731,6 +718,25 @@ export default function Home() {
                       Up to {room.max_guests} guests
                     </span>
                   </div>
+                  {(room.photo_urls?.length || 0) > 1 && (
+                    <div
+                      className="photo-strip"
+                      aria-label={`${room.name} photos`}
+                    >
+                      {room.photo_urls!.map((url, i) => (
+                        <button
+                          key={url}
+                          aria-label={`Photo ${i + 1} of ${room.name}`}
+                          aria-pressed={(photoIndex[room.id] || 0) === i}
+                          onClick={() =>
+                            setPhotoIndex({ ...photoIndex, [room.id]: i })
+                          }
+                        >
+                          <img src={url} alt={`${room.name} view ${i + 1}`} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="room-content">
                     <div className="eyebrow">WN HOTEL</div>
                     <h3>{room.name}</h3>
@@ -1044,7 +1050,7 @@ export default function Home() {
                             : "current-password"
                         }
                         required
-                        minLength={authView === "signup" ? 6 : undefined}
+                        minLength={authView === "signup" ? 12 : undefined}
                         placeholder={
                           authView === "signup"
                             ? "At least 6 characters"
@@ -1065,6 +1071,22 @@ export default function Home() {
                       </button>
                     </div>
                   </>
+                )}
+                {authView === "signup" && (
+                  <label>
+                    Phone number
+                    <input
+                      aria-label="Signup phone"
+                      required
+                      pattern="09[0-9]{9}"
+                      minLength={11}
+                      maxLength={11}
+                      inputMode="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="09xxxxxxxxx"
+                    />
+                  </label>
                 )}
                 {authView === "signup" && (
                   <>
@@ -1123,39 +1145,6 @@ export default function Home() {
                   <Icon name="arrow" />
                 </button>
               </form>
-            )}
-            {(authView === "login" || authView === "signup") && (
-              <>
-                <div className="auth-divider">
-                  <span>or continue with</span>
-                </div>
-                <div className="social-buttons">
-                  <button
-                    disabled={busy || localTest}
-                    onClick={() => void task(() => socialLogin("google"), true)}
-                  >
-                    <span aria-hidden="true" className="google-letter">
-                      G
-                    </span>
-                    Google
-                  </button>
-                  <button
-                    disabled={busy || localTest}
-                    onClick={() => void task(() => socialLogin("apple"), true)}
-                  >
-                    <svg
-                      aria-hidden="true"
-                      width="18"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                    >
-                      <path d="M16.5 1c.1 2-1.5 4-3.5 4 .1-1.8 1.4-3.6 3.5-4ZM20.6 17.8c-.6 1.3-.9 1.9-1.6 3-1 1.4-2.4 3.1-4.1 3.2-1.5 0-1.9-1-4-1-2 0-2.4 1-3.9 1-1.7-.1-3-1.6-4-3C.2 16.8.1 10.3 2.5 7.1 4.2 4.8 7 4.5 9 5.5c1 .4 1.7.8 2.4.8.6 0 1.5-.4 2.7-.9 1.7-.7 4.3-.4 5.9 1.6-5.1 2.8-4.3 8.5.6 10.8Z" />
-                    </svg>
-                    Apple
-                  </button>
-                </div>
-              </>
             )}
             {authView === "contact" ? (
               <button

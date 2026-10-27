@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and start disposable local stack
         run: docker compose -f compose.test.yml up -d --build
-      - name: Real API, Auth Emulator and PostgreSQL acceptance tests
+      - name: Local accounts, kitchen and PostgreSQL acceptance tests
         run: docker compose -f compose.test.yml -f compose.acceptance.yml run --rm acceptance
       - name: Website smoke test
         run: |

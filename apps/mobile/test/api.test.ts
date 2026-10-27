@@ -17,12 +17,12 @@ test("rejects insecure or credential-bearing API URLs", () => {
     "https://hotel.example/api",
   );
 });
-test("booking sends Firebase token and stable idempotency key; rejects redirects", async () => {
+test("booking sends session token and stable idempotency key; rejects redirects", async () => {
   let request: RequestInit | undefined;
   let requestedUrl = "";
   const api = new WhApi(
     "https://hotel.example/api",
-    async () => "firebase-token",
+    async () => "session-token",
     async (url, options) => {
       requestedUrl = String(url);
       request = options;
@@ -42,7 +42,7 @@ test("booking sends Firebase token and stable idempotency key; rejects redirects
   assert.equal(request?.redirect, "error");
   assert.equal(
     (request?.headers as Record<string, string>).Authorization,
-    "Bearer firebase-token",
+    "Bearer session-token",
   );
   assert.equal(
     (request?.headers as Record<string, string>)["Idempotency-Key"],
@@ -94,7 +94,7 @@ test("native account contact is saved against the authenticated backend without 
     body: RequestInit | undefined;
   const api = new WhApi(
     "https://hotel.example/api",
-    async () => "firebase-token",
+    async () => "session-token",
     async (input, options) => {
       url = String(input);
       body = options;
@@ -109,7 +109,7 @@ test("native account contact is saved against the authenticated backend without 
   assert.equal(body?.method, "PATCH");
   assert.equal(
     (body?.headers as Record<string, string>).Authorization,
-    "Bearer firebase-token",
+    "Bearer session-token",
   );
   assert.deepEqual(JSON.parse(String(body?.body)), { phone: "09123456789" });
 });

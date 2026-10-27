@@ -13,24 +13,16 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
-  auth:
+  seed:
     build:
       context: .
-      dockerfile: infra/auth-emulator.Dockerfile
-    ports: ['${WH_TEST_BIND:-127.0.0.1}:9099:9099']
-    healthcheck:
-      test: [CMD, node, '-e', "fetch('http://127.0.0.1:9099').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-  seed:
-    image: node:22-alpine
-    volumes: ['./scripts:/scripts:ro']
+      dockerfile: apps/api/Dockerfile
     environment:
-      AUTH_EMULATOR_URL: http://auth:9099
-    command: [node, /scripts/seed-test-users.mjs]
+      APP_ENV: local-test
+      DATABASE_URL: postgresql://wh:local-test-only-password@db:5432/wh_test
+    command: [node, apps/api/scripts/seed-test-users.mjs]
     depends_on:
-      auth: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
   migrate:
     build:
       context: .
@@ -49,9 +41,6 @@ services:
       APP_ENV: local-test
       EMAIL_TEST_MODE: "true"
       DATABASE_URL: postgresql://wh:local-test-only-password@db:5432/wh_test
-      FIREBASE_PROJECT_ID: demo-wh-final
-      FIREBASE_AUTH_EMULATOR_HOST: auth:9099
-      ADMIN_UIDS: wh-test-admin
       WEB_ORIGIN: http://localhost:3000
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -66,10 +55,6 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        NEXT_PUBLIC_FIREBASE_API_KEY: demo-key
-        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: demo-wh-final.firebaseapp.com
-        NEXT_PUBLIC_FIREBASE_PROJECT_ID: demo-wh-final
-        NEXT_PUBLIC_FIREBASE_APP_ID: demo-wh-web
         NEXT_PUBLIC_LOCAL_TEST: 'true'
     environment:
       API_INTERNAL_URL: http://api:4000

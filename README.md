@@ -1,282 +1,127 @@
-# WN Hotel — web/API starter + Expo mobile v0.3
+# WN Hotel
 
-WN ဟိုတယ်တစ်ခုတည်းအတွက် Next.js website + NestJS API + PostgreSQL starter ဖြစ်ပါတယ်။
-React Native + Expo mobile app source ကို `apps/mobile` မှာ ထည့်ထားပါတယ်။ [Mobile setup guide](apps/mobile/README.md) ကို ဖတ်ပါ။
+Single-hotel booking website, Android/iOS app, administration and kitchen operations.
 
-**Account/domain မရှိသေးဘဲ စမ်းရန်: [Local final-test guide](docs/FINAL-TEST.md)**
+## Current stack
 
-**Production-ready booking/payment product မဟုတ်သေးပါ။** ပထမအဆင့်မှာ setup/run လုပ်ပြီး ဆက်တည်ဆောက်နိုင်ဖို့ ရည်ရွယ်ပါတယ်။
+- Next.js website and admin dashboard.
+- NestJS API with PostgreSQL 17, including local email/password accounts.
+- React Native / Expo mobile app, version 0.5.0.
+- SMTP for password recovery and booking approval emails.
+- GitHub Actions for verification, disposable end-to-end testing and Android APK builds.
 
-## ပါဝင်ပြီးသောအပိုင်း
+Firebase is no longer a runtime dependency. Google/Apple/SMS login has been removed in this release. Email/password is the supported login method.
 
-- Responsive customer room page (CSS room illustrations, real photos မဟုတ်သေး)
-- Dates/guests နဲ့ room availability search
-- Firebase Google/Apple popup login, phone OTP signup/linking, email verification prompt
-- Backend Firebase token verification; verified phone ရှိမှ booking ခွင့်ပြု
-- Server-side total price, 30-minute booking request hold
-- PostgreSQL exclusion constraint ဖြင့် physical-room overlap ကာကွယ်မှု
-- User-scoped idempotency keys, request mismatch rejection
-- Admin UID allowlist; booking accept/reject dashboard + audit record
-- Accept လုပ်ပြီး payment deadline 10 minutes; periodic expired hold cleanup
-- Docker Compose, DB migration, backup script, CI and optional VPS auto-deploy
+## Upgrade an existing server
 
-## ဆက်တည်ဆောက်ရမည့်အပိုင်း
+The migration is additive. Booking, room, payment, photo and staff records remain in the database. Historical `firebase_uid` columns remain stable internal keys only.
 
-- Live payment providers/webhooks/refunds: contract only, credentials မပါ
-- Payment confirmation: ဒီ version က CONFIRMED အဖြစ် ပြောင်းပေးမယ့် payment flow မပါ
-- Full staff account invitation/deletion (room photo upload/rate editor + permission management are implemented)
-- Daily rates/tax/deposit/cancellation policies, multi-room booking
-- Dated maintenance blocks, notifications and advanced calendar/PMS (14-day availability view + physical room offline toggle are implemented)
-- Email/password login UI, polished account collision/recovery flow
-- Live mobile payment integration and signed mobile store releases (Expo room/auth/booking screens are implemented in v0.3; live device testing still required)
-- Production abuse prevention, OTP limits, admin MFA, monitoring and recovery hardening
-
-Firebase key မဖြည့်ထားရင် room browsing/availability ရပါတယ်။ Login/booking/admin API က configuration error ပေးပြီး ပိတ်ထားပါတယ်။ Demo login bypass မရှိပါ။
-
-## 1. Ubuntu 24.04 မှာ run နည်း
-
-GitHub repository တင်ပြီးသားဖြစ်မှ clone URL ကို သုံးပါ။ ZIP ကို ဖြည်ထားရင် အဲဒီ project folder ထဲဝင်ပါ။
-
-```bash
-sudo apt update
-sudo apt install -y git docker.io docker-compose-v2 nginx certbot python3-certbot-nginx
-sudo systemctl enable --now docker
-
-sudo git clone https://github.com/AungKhantPaing5/wh-hotel.git /opt/wh-hotel
-cd /opt/wh-hotel
-sudo cp .env.example .env
-sudo nano .env
-```
-
-အရင်ဆုံး ပြင်ရန်:
-
-```dotenv
-POSTGRES_PASSWORD=your_long_random_letters_and_numbers
-WEB_PORT=3000
-WEB_ORIGIN=https://your-hotel-domain.com
-```
-
-Password ကို 32 characters အနည်းဆုံး random hex/alphanumeric သုံးပါ။ URL escaping လိုတဲ့ punctuation ကို ဒီ starter မှာ မသုံးပါနှင့်။
-
-```bash
-openssl rand -hex 24
-```
-
-Output ကို ကိုယ့် .env ထဲပဲထည့်ပါ။ Chat/GitHub ထဲ မတင်ပါနှင့်။
-
-```bash
-sudo bash scripts/install.sh
-sudo docker compose ps
-curl -I http://127.0.0.1:3000
-sudo docker compose exec -T api node -e "fetch('http://localhost:4000/v1/health/ready').then(r=>r.text()).then(console.log)"
-```
-
-ပထမ build မှာ dependency download လုပ်ရလို့ ကြာနိုင်ပါတယ်။ migrate service က Exited (0) ဖြစ်တာ ပုံမှန်ပါ။ web/api/db က running ဖြစ်ရပါမယ်။
-
-Website port ကို loopback မှာပဲဖွင့်ထားပါတယ်။ Public IP:3000 ကို တိုက်ရိုက်ဖွင့်မရတာ ပုံမှန်ပါ။
-
-Local PC ပေါ်မှာ Docker သုံးရင် `WEB_ORIGIN=http://localhost:3000` ထားပြီး `http://localhost:3000` မှဖွင့်ပါ။
-
-## 2. Domain + HTTPS
-
-Domain ရဲ့ DNS A record ကို VPS IPv4 ဆီညွှန်ပါ။
+1. Back up the existing PostgreSQL database and uploaded-photo volume before switching authentication:
 
 ```bash
 cd /opt/wh-hotel
-sudo cp infra/nginx.conf.example /etc/nginx/sites-available/wh-hotel
-sudo nano /etc/nginx/sites-available/wh-hotel
+mkdir -p backups
+chmod 700 backups
+umask 077
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "backups/before-local-auth-$(date +%Y%m%d-%H%M%S).sql"
+docker compose exec -T api tar -C /app/uploads -czf - . > "backups/photos-$(date +%Y%m%d-%H%M%S).tar.gz"
 ```
 
-`YOUR_DOMAIN` ကို ကိုယ့် domain နဲ့ အစားထိုးပါ။
+2. Pull and rebuild. Keep the existing `POSTGRES_PASSWORD` and Docker volumes.
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/wh-hotel /etc/nginx/sites-enabled/wh-hotel
-sudo nginx -t
-sudo systemctl reload nginx
-sudo certbot --nginx -d your-hotel-domain.com
+git pull --ff-only
+docker compose up -d --build
 ```
 
-DNS/HTTP port 80 reachability လိုအပ်ပါတယ်။ 80/443 ကို 3x-ui/Outline စတာတွေ သုံးထားပြီးသား VPS ဆိုရင် ဒီ Nginx setup ကို မတင်ခင် existing listener တွေ စစ်ပါ။ Dedicated domain တစ်ခုထည့်ရုံနဲ့ တခြား service ရဲ့ 443 listener နဲ့ အလိုအလျောက်မျှသုံးလို့မရပါ။
+3. Set `.env` `WEB_ORIGIN` to the exact public HTTPS origin, without a trailing slash, e.g. `https://thai1.payapi.uk`. Production cookies require HTTPS. Set the SMTP values below for recovery and booking emails. Recreate API after changing environment values:
 
 ```bash
-sudo ss -ltnp
+docker compose up -d --force-recreate api
 ```
 
-## 3. Firebase login setup
-
-1. Firebase Console မှာ project ဖန်တီးပါ။
-2. Authentication → Sign-in method မှ Google, Apple, Phone ဖွင့်ပါ။
-3. Authentication → Settings → Authorized domains ထဲ hotel domain နဲ့ localhost ထည့်ပါ။
-4. Project Settings → Web app မှ config ယူပြီး .env ဖြည့်ပါ။
-
-```dotenv
-NEXT_PUBLIC_FIREBASE_API_KEY=your_public_web_api_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project
-NEXT_PUBLIC_FIREBASE_APP_ID=your_web_app_id
-FIREBASE_PROJECT_ID=your-project
-```
-
-5. Service Accounts မှ Admin SDK JSON ထုတ်ပြီး `/opt/wh-hotel/secrets/firebase-admin.json` အဖြစ် ကူးပါ။ Repository ထဲမထည့်ပါနှင့်။
-6. Container က node user UID 1000 နဲ့ run ပါတယ်။ JSON ကို အဲဒီ user ဖတ်နိုင်အောင် ownership/permissions သတ်မှတ်ပါ။
+4. Create the hotel owner account interactively. The password is hidden and must be 12–128 characters:
 
 ```bash
-sudo mkdir -p secrets
-sudo chown -R 1000:1000 secrets
-sudo chmod 700 secrets
-sudo chmod 600 secrets/firebase-admin.json
-sudo docker compose up -d --build
+docker compose exec api node apps/api/scripts/manage-owner.mjs
 ```
 
-Firebase web config က build-time variable ဖြစ်တဲ့အတွက် ပြောင်းတိုင်း web rebuild လုပ်ရပါတယ်။
+Open `/admin` and enter this email/password. The same command can recover owner access from the server console. It must only be run by the server operator.
 
-Google sign-in အတွက် provider setup; Apple အတွက် Apple Developer Service ID, Team ID, Key နဲ့ Firebase callback URL setup လိုပါတယ်။
-Phone OTP အတွက် Firebase SMS billing/region policy ကို စစ်ပြီး test phone numbers နဲ့ စမ်းပါ။ Myanmar SMS delivery ကို အမှန်တကယ်စမ်းပြီးမှ production ဖွင့်ပါ။
+5. Existing Firebase passwords cannot authenticate against the new account system. Migration imports only unambiguous booking email/UID pairs with no password. These customers use Forgot password once SMTP is configured, or the owner sets a temporary password under **Customers**. An admin-set temporary password requires a change before booking, kitchen ordering or privileged staff operations.
 
-## 4. Admin ဘယ်လိုဝင်မလဲ
+Accounts with no booking email, shared email/UID collisions, and staff without an imported account need an explicit identity mapping. See [migration and testing guide](docs/local-accounts-kitchen.md). Do not create duplicate accounts for customers whose history needs linking.
 
-Default admin username/password မရှိပါ။
+6. Install the new Android APK after deploying the backend. Version 0.4 used Firebase and does not support the new login protocol. New test APKs are under GitHub Actions **WN Android Local Accounts**. Store signing / iPhone installation require the respective platform credentials.
 
-1. Customer page → My account → Google နဲ့ ဝင်ပါ။
-2. Firebase Console → Authentication → Users မှ အဲဒီ user ရဲ့ UID ကိုယူပါ။
-3. `.env` မှာ `ADMIN_UIDS=that-firebase-uid` ထည့်ပါ။ အများကြီးဆို comma ခွဲပါ။
-4. `sudo docker compose up -d api` ပြန်လုပ်ပါ။
-5. `https://your-domain/admin` မှ Google အကောင့်တူနဲ့ ဝင်ပါ။
+## Owner account management
 
-Staff role UI မပါသေးပါ။ ADMIN_UIDS ထဲထည့်တာက booking admin အပြည့်ပေးတာဖြစ်ပါတယ်။
+**Customers** lets the owner create accounts, edit customer/staff email, set a new temporary password and disable accounts. Password hashes never appear in the dashboard. Changing account credentials revokes all sessions and recovery tokens. Owners change their own password through the password form or the server-only command.
 
-## 5. ဘယ်ဖိုင်မှာ ဘာပြင်မလဲ
+**Staff** accepts an account email and these permissions:
 
-| ပြင်လိုသည့်အရာ | နေရာ |
+| Permission | Access |
 |---|---|
-| Domain, DB password, Firebase, admin UID | `.env` |
-| Customer text/layout | `apps/web/src/app/page.tsx` |
-| Colors/spacing/design | `apps/web/src/app/style.css` |
-| Website title/description | `apps/web/src/app/layout.tsx` |
-| Admin booking page | `apps/web/src/app/admin/page.tsx` |
-| Booking rules/API | `apps/api/src/main.ts` |
-| Date validation | `apps/api/src/dates.ts` |
-| First-install sample rooms/rates | `apps/api/sql/001.sql` |
-| Payment integration interface | `apps/api/src/payment-provider.ts` |
-| Nginx domain/proxy | `/etc/nginx/sites-available/wh-hotel` |
-| React Native / Expo mobile app | `apps/mobile/App.tsx` |
-| CI / deployment | `.github/workflows/` |
+| `bookings.read` | Read bookings and customer contact details |
+| `bookings.manage` | Accept/reject booking requests, record received offline payment with stay permission |
+| `stays.manage` | Check in/out confirmed bookings |
+| `rooms.manage` | Room types, rates, physical rooms and photos |
+| `payments.read` | Payment ledger |
+| `kitchen.manage` | Create/edit dishes, upload dish photos, change availability and manage food-order progress |
 
-Migration 001 က first install တစ်ကြိမ်ပဲ run ပါတယ်။ Install ပြီးမှ 001.sql ကို edit လုပ်တာနဲ့ ရှိပြီးသား DB မပြောင်းပါ။ နောက် version အတွက် migration အသစ်ရေးပြီး migrate.mjs မှာ version register လုပ်ရပါမယ်။
+Booking-management/stay permissions also grant booking read access. Only owner accounts can assign permissions or set/change dish prices, including through direct API calls. Kitchen staff can create an unpriced dish, which remains hidden from the orderable menu until the owner prices it. Mark unavailable to archive a dish while preserving order history.
 
-လက်ရှိ demo price ပြောင်းရန် (အောက်က 9,500,000 minor units = 95,000 MMK ဆိုပြီး ဒီ starter မှာ decimal places 2 ယူထားပါတယ်):
+## Stay and kitchen flow
+
+1. Guest requests a room. Admin accepts it. Approval email states **awaiting payment**.
+2. After actually receiving cash/bank payment, authorized staff records the receipt reference. This creates a separate `MANUAL` payment record and confirms the booking. It does not call a payment gateway.
+3. Admin/staff checks the guest in during their reserved dates, using Myanmar hotel time.
+4. Checked-in customers order dishes in the website account Kitchen section or the native mobile Kitchen tab. Server validates guest ownership, check-in state, current prices and availability. Quantities and price snapshots remain in the order history. Food charges are separate from room payments.
+5. Kitchen changes `PLACED` to `PREPARING`, `READY`, then `DELIVERED`, or cancels an open order.
+6. Staff delivers/cancels open orders before checking out. New food orders are blocked after check-out. Concurrent checkout/order requests serialize against the booking row.
+
+Room types support **40 photos each**, up to 5 MiB / 20 MP per image. Admin can select multiple files. Each is uploaded sequentially, normalized to WebP and stored on the persistent photo volume. Customer web thumbnails and the native full-screen gallery display all selected images.
+
+## SMTP
+
+```dotenv
+WEB_ORIGIN=https://your-domain.com
+SMTP_HOST=your-provider-smtp-host
+SMTP_PORT=587
+SMTP_USER=your-provider-login
+SMTP_PASS=your-provider-secret
+EMAIL_FROM="WN Hotel <bookings@your-domain.com>"
+```
+
+Use the provider's domain verification / SPF / DKIM settings. Secrets stay server-side. Without SMTP, login works but Forgot password reports recovery unavailable and booking mail remains queued. Admin password resets remain available.
+
+Recovery links expire in 30 minutes, are single-use and revoke previous sessions on success. Web reset uses `/reset-password#token=...` and clears the fragment after reading it. Android lets users paste the emailed recovery code and reset inside the app. There is no email verification or email OTP in this release.
+
+## Local testing
 
 ```bash
-sudo docker compose exec db psql -U wh -d wh_hotel
+docker compose -f compose.test.yml up -d --build
+docker compose -f compose.test.yml -f compose.acceptance.yml run --rm acceptance
 ```
 
-```sql
-SELECT id,name,nightly_amount_minor FROM room_types;
-UPDATE room_types SET nightly_amount_minor=9500000 WHERE id=1;
-\q
-```
-
-UI မှာ price ကို 100 နဲ့စားပြီးပြပါတယ်။ Payment provider ချိတ်ချိန်မှာ currency exponent ကို official docs အတိုင်း adapter ထဲ convert လုပ်ရပါမယ်။
-
-Customer က category တစ်ခုနဲ့ room တစ်ခန်းကို request လုပ်နိုင်ပါတယ်။ Request ကို မိနစ် 30 အတွင်း admin မလက်ခံရင် expire ဖြစ်ပါတယ်။ Accept လုပ်ပြီး payment window 10 minutes ရပါတယ်။ **Payment မချိတ်ရသေးတဲ့ version ဖြစ်လို့ window ကုန်ရင် expire ပြန်ဖြစ်ပါမယ်။**
-
-## 6. GitHub ပေါ်တင်ရန်
-
-Repository မရှိသေးရင် GitHub မှာ `wh-hotel` နာမည်နဲ့ ဖန်တီးပါ။ Connector ကနေ upload လုပ်ဖို့ဆို README ပါတဲ့ initial commit ထည့်ပါ။
-
-ကိုယ်တိုင် Git CLI နဲ့တင်မယ်ဆို empty repository ရွေးပြီး project root မှာ:
+Use `http://localhost:3000`. Isolated test accounts: `admin@wh.test`, `guest@wh.test`, `staff@wh.test`; password `WhTestOnly2026!`. These accounts are created only with `APP_ENV=local-test`. Test mail uses a JSON transport and never sends externally. No Firebase emulator is required.
 
 ```bash
-git init
-git branch -M main
-git add .
-git commit -m "Add WN Hotel starter"
-git remote add origin https://github.com/AungKhantPaing5/wh-hotel.git
-git push -u origin main
-```
-
-GitHub authentication ကို GitHub CLI သို့မဟုတ် credential manager နဲ့လုပ်ပါ။ Token ကို command URL ထဲ မထည့်ပါနှင့်။
-
-## 7. GitHub push → VPS auto-update
-
-ပထမဆုံး manual install အလုပ်လုပ်ပြီးမှ ဖွင့်ပါ။ ဒီ starter က CI စစ်ပြီးတဲ့ commit ကို VPS မှာ Docker rebuild လုပ်ပါတယ်။ GHCR မလိုပါ။ VPS မှာ Git နဲ့ build resources လိုပြီး deployment အတွင်း brief downtime ဖြစ်နိုင်ပါတယ်။
-
-VPS project folder `/opt/wh-hotel` ဖြစ်ရပါမယ်။ SSH user က အဲဒီ folder ကို edit လုပ်နိုင်ပြီး Docker သုံးခွင့်ရှိရပါမယ်။ Docker group access က host ပေါ် privileged access ဖြစ်တာကြောင့် dedicated deployment account သုံးပါ။
-
-GitHub → Settings → Secrets and variables → Actions → Secrets:
-
-```text
-VPS_HOST         server IP or SSH hostname
-VPS_USER         deployment Linux user
-VPS_SSH_KEY      dedicated SSH private key
-VPS_KNOWN_HOSTS  verified server known_hosts entry
-```
-
-Private repository ဆို VPS မှာ read-only GitHub deploy key ချိတ်ထားရပါမယ်။ `git fetch origin main` ကို VPS မှာ manual အရင်စမ်းပါ။
-
-GitHub → Settings → Environments မှ `production` ဖန်တီးပါ။ Variables မှာ:
-
-```text
-AUTO_DEPLOY=true
-```
-
-ပြီးရင် main push → WN CI pass → WN Deploy → VPS update ဖြစ်ပါမယ်။ VPS secrets မဖြည့်ရသေးရင် AUTO_DEPLOY ကို မဖွင့်ပါနှင့်။
-
-Deployment script မှာ health checks ပါပေမယ့် automatic rollback မပါပါ။ ယခင် SHA ကို `.previous-release` မှာ သိမ်းပါတယ်။ Schema change နဲ့ ကိုက်ညီမှုစစ်ပြီးမှ previous version ပြန်တင်ပါ။ DB rollback ကို git checkout နဲ့ မလုပ်နိုင်ပါ။
-
-```bash
-sudo docker compose logs --tail=100 api web migrate
-sudo docker compose ps
-```
-
-## 8. React Native + Expo app စတင် run နည်း
-
-```bash
+npm ci
+npm test
+npm run build
 cd apps/mobile
 npm ci
-cp .env.example .env
-npm start
-```
-
-Default Preview mode မှ sample rooms ကို စမ်းနိုင်ပါတယ်။ Real authentication အတွက် native development build နဲ့ Firebase config လိုပါတယ်။ Mobile code / Android APK / iOS simulator / signed EAS build အတွက် [Mobile setup guide](apps/mobile/README.md) ကိုဖတ်ပါ။ Workflow: **WN Expo Mobile**။
-
-## 9. Backup
-
-```bash
-cd /opt/wh-hotel
-sudo bash scripts/backup.sh
-```
-
-`backups/` မှ dump ကို သီးခြားနေရာဆီကူးပါ။ DB credentials/Firebase service key ကို သီးခြား secure backup လုပ်ပါ။
-Restore ကို disposable database ပေါ်မှာအရင်စမ်းပါ။ `docker compose down -v` က DB volume ဖျက်နိုင်လို့ data ရှိတဲ့ server မှာ မသုံးပါနှင့်။
-
-## 10. Verification
-
-```bash
-npm ci
-npm run build
+npm run typecheck
 npm test
 ```
 
-Local environment မှာ Next.js production build, NestJS TypeScript build, date validation tests pass ဖြစ်ပါတယ်။ PostgreSQL inventory integration test က DATABASE_URL မရှိရင် skip ပါတယ်။ CI က PostgreSQL service နဲ့ migration/inventory test ကို run ပါတယ်။
-Expo migration ကို TypeScript/tests/bundle export ဖြင့်စစ်ပြီး native build ကို GitHub Actions မှစစ်ပါတယ်။ Physical-device end-to-end testing လိုပါသေးတယ်။ Firebase real-provider login, SMS delivery နဲ့ live payments ကို မစမ်းရသေးပါ။
+## CI/CD
 
-Dependency audit (`npm audit --omit=dev`) က creation time မှာ vulnerabilities 0 ပြပါတယ်။ Root package.json မှာ transitive gRPC version ကို security fix ပါတဲ့ 1.14.6 နဲ့ pin လုပ်ထားပါတယ်။
+- **WH CI** builds API/site and checks schema against disposable PostgreSQL.
+- **WH Local Acceptance** runs real API/database tests and Playwright customer/admin flows.
+- **WN Expo Mobile** checks types/tests and Android/iOS JS exports.
+- **WN Android Local Accounts** builds a standalone ARM64 Android APK with test signing, using `EXPO_PUBLIC_API_URL` repository variable or `https://thai1.payapi.uk/api`.
+- **WH Deploy** runs only after the local end-to-end acceptance workflow succeeds and remains opt-in with repository variable `AUTO_DEPLOY=true`, production environment and SSH secrets. Prepare owner migration and backups before enabling it for this release.
 
-## Official references
-
-- https://firebase.google.com/docs/auth/admin/verify-id-tokens
-- https://firebase.google.com/docs/auth/web/account-linking
-- https://www.postgresql.org/docs/current/rangetypes.html
-- https://docs.expo.dev/build/building-on-ci/
-- https://docs.github.com/en/actions
-- https://docs.stripe.com/webhooks
-
-## Next implementation order
-
-1. Configure and test Firebase login/phone linking on HTTPS.
-2. Add admin room/photo/rate editor and staff RBAC.
-3. Implement audited payment sessions, verified webhooks, refunds and reconciliation.
-4. Add booking notifications and policies.
-5. Configure and device-test mobile authentication/booking; integrate payments.
-6. Add signed store releases, production security review and restore drills.
+Live payment APIs remain disabled until merchant integration is supplied. Manual payment entry must correspond to an actual payment received by the hotel.

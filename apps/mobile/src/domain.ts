@@ -16,6 +16,8 @@ export interface Stay {
   guests: number;
 }
 export interface Booking {
+  checked_in_at?: string | null;
+  checked_out_at?: string | null;
   id: string;
   check_in: string;
   check_out: string;

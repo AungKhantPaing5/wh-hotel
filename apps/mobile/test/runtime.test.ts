@@ -14,7 +14,7 @@ test("uploaded photos resolve against the hotel origin and preserve external HTT
 });
 test("test configuration is validated before being used",()=>{
   const prior={...runtime};
-  configurePrivateTest("http://192.168.1.5:3001/api","http://192.168.1.5:9099");
+  configurePrivateTest("http://192.168.1.5:3001/api");
   assert.equal(runtime.localTest,true);
   Object.assign(runtime,prior);
 });

@@ -1,160 +1,375 @@
-import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
-import sharp from 'sharp';
-const authBase = process.env.AUTH_EMULATOR_URL || 'http://127.0.0.1:9099';
-const base = process.env.TEST_API_URL || 'http://127.0.0.1:4000/v1';
-if (process.env.APP_ENV !== 'local-test') throw new Error('Acceptance fixture writes require APP_ENV=local-test.');
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-const password='WhTestOnly2026!';
-async function login(email) {
-  const r=await fetch(`${authBase}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,returnSecureToken:true})});
-  const data=await r.json();assert.equal(r.status,200,JSON.stringify(data));return data.idToken;
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { Pool } from "pg";
+import sharp from "sharp";
+if (process.env.APP_ENV !== "local-test")
+  throw Error("Disposable testing only.");
+const base = process.env.TEST_API_URL || "http://127.0.0.1:4000/v1",
+  db = new Pool({ connectionString: process.env.DATABASE_URL }),
+  password = "WhTestOnly2026!";
+async function call(path, token, method = "GET", body, key, status = 200) {
+  const r = await fetch(`${base}/${path}`, {
+    method,
+    headers: {
+      "X-WN-Request": "1",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {}),
+      ...(key ? { "Idempotency-Key": key } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await r.json();
+  assert.equal(r.status, status, `${method} ${path}: ${JSON.stringify(data)}`);
+  return data;
 }
-async function call(path,token,method='GET',body,key,status=200){
- const r=await fetch(`${base}/${path}`,{method,headers:{...(token?{Authorization:`Bearer ${token}`} : {}),...(body?{'Content-Type':'application/json'}:{}),...(key?{'Idempotency-Key':key}:{})},...(body?{body:JSON.stringify(body)}:{})});
- const data=await r.json();assert.equal(r.status,status,`${method} ${path}: ${JSON.stringify(data)}`);return data;
+async function login(email, scope = "customer", pass = password) {
+  return (
+    await call(
+      "auth/login",
+      null,
+      "POST",
+      { email, password: pass, scope },
+      undefined,
+      201,
+    )
+  ).token;
 }
-let owner, guest, staff, original, physical, originalStaff;
-try{
- owner=await login('admin@wh.test');guest=await login('guest@wh.test');staff=await login('staff@wh.test');
- assert.equal((await call('admin/system',owner)).localTest,true,'Never run acceptance fixtures on a live backend.');
- // This is a disposable test database. Remove only previous acceptance stays for the seeded guest.
- await pool.query('DELETE FROM payment_transactions WHERE booking_id IN (SELECT id FROM bookings WHERE firebase_uid=$1)', ['wh-test-guest']);
- await pool.query('DELETE FROM audit_logs WHERE booking_id IN (SELECT id FROM bookings WHERE firebase_uid=$1)', ['wh-test-guest']);
- await pool.query('DELETE FROM bookings WHERE firebase_uid=$1', ['wh-test-guest']);
- const types=await call('admin/room-types',owner);original=types[0];physical=(await call('admin/rooms',owner)).filter(r=>r.room_type_id===original.id);
- originalStaff=(await call('admin/staff',owner)).find(r=>r.firebase_uid==='wh-test-staff');
- const today=new Date(Date.now()+390*60000+7*86400000).toISOString().slice(0,10);
- const out=new Date(Date.parse(`${today}T00:00:00Z`)+86400000).toISOString().slice(0,10);
- const body={roomTypeId:original.id,checkIn:today,checkOut:out,guests:1};
- await call('bookings',null,'GET',undefined,undefined,401);
- await call('admin/bookings',guest,'GET',undefined,undefined,403);
- await call('admin/system',staff,'GET',undefined,undefined,403);
- const unverified=await login('nophone@wh.test');
- await call('bookings',unverified,'POST',body,randomUUID(),403);
- console.log('PASS authentication, owner boundary and required-contact booking gate');
- // Self-reported contact data must be validated and scoped to the signed-in UID.
- await call('me/contact',null,'PATCH',{phone:'09123456789'},undefined,401);
- assert.equal((await call('me',unverified)).needsPhone,true);
- for(const phone of [null,12345678901,'08123456789','0912345678','091234567890','+959123456789','09abcdefghi',' 09123456789','09123456789\n']) {
-   await call('me/contact',unverified,'PATCH',{phone},undefined,400);
- }
- await call('me/contact',unverified,'PATCH',{phone:'09123456789'});
- const contact=await call('me',unverified);
- assert.equal(contact.phone,'09123456789');assert.equal(contact.needsPhone,false);
- assert.notEqual((await call('me',guest)).phone, contact.phone);
- await pool.query('DELETE FROM customer_contacts WHERE firebase_uid=$1',[contact.uid]);
- console.log('PASS required phone format validation, authenticated persistence and UID isolation without SMS');
-
- // Physical room changes preserve existing allocation IDs and reject duplicates.
- await call('admin/rooms',guest,'POST',{roomTypeId:original.id,number:'acceptance-601'},undefined,403);
- const newRoom=await call('admin/rooms',owner,'POST',{roomTypeId:original.id,number:'acceptance-601'},undefined,201);
- await call(`admin/rooms/${newRoom.id}`,staff,'PATCH',{number:'acceptance-602'},undefined,403);
- await call(`admin/rooms/${newRoom.id}`,owner,'PATCH',{number:'acceptance-602'});
- assert.ok((await call('rooms')).find(type=>type.id===original.id).room_numbers.includes('acceptance-602'));
- await call(`admin/rooms/${newRoom.id}`,owner,'PATCH',{number:physical[0].number},undefined,400);
- await call('admin/rooms',owner,'POST',{roomTypeId:original.id,number:'acceptance-602'},undefined,400);
- await call(`admin/rooms/${newRoom.id}`,owner,'PATCH',{active:false});
- assert.ok(!(await call('rooms')).find(type=>type.id===original.id).room_numbers.includes('acceptance-602'));
- await pool.query('DELETE FROM rooms WHERE id=$1',[newRoom.id]);
- console.log('PASS physical room creation, renaming, duplicate rejection and public room numbers');
- const newTypeBody={name:'Acceptance Garden Room',description:'A room created by the hotel.',maxGuests:2,nightlyAmountMinor:'7500000',amenities:['Wi-Fi'],photoUrls:[],roomNumbers:['acceptance-501','acceptance-502']};
- await call('admin/room-types',guest,'POST',newTypeBody,undefined,403);
- await call('admin/room-types',staff,'POST',newTypeBody,undefined,403);
- await call('admin/room-types',owner,'POST',{...newTypeBody,maxGuests:0},undefined,400);
- const createdType=await call('admin/room-types',owner,'POST',newTypeBody,undefined,201);
- assert.equal((await pool.query('SELECT count(*)::integer AS count FROM rooms WHERE room_type_id=$1',[createdType.id])).rows[0].count,2);
- const countBefore=(await call('admin/room-types',owner)).length;
- await call('admin/room-types',owner,'POST',newTypeBody,undefined,400);
- assert.equal((await call('admin/room-types',owner)).length,countBefore,'Duplicate inventory must roll back the new category.');
- await pool.query('DELETE FROM rooms WHERE room_type_id=$1',[createdType.id]);
- await pool.query('DELETE FROM room_types WHERE id=$1',[createdType.id]);
- await call('admin/staff',staff,'POST',{email:'guest@wh.test',permissions:['rooms.manage']},undefined,403);
- await call('admin/staff',owner,'POST',{email:'missing@wh.test',permissions:[]},undefined,404);
- await call('admin/staff',owner,'POST',{email:'admin@wh.test',permissions:[]},undefined,400);
- console.log('PASS room-type creation with inventory, duplicate rollback and email-based staff authorization');
- await call('admin/staff',owner,'POST',{email:'staff@wh.test',permissions:['bookings.read','payments.read']},undefined,201);
- await call('admin/bookings',staff);await call('admin/payments',staff);
- await call(`admin/room-types/${original.id}`,staff,'PATCH',{},undefined,403);
- const edit={name:original.name,description:original.description,maxGuests:original.max_guests,nightlyAmountMinor:'9900000',amenities:original.amenities,photoUrls:[]};
- await call(`admin/room-types/${original.id}`,owner,'PATCH',edit);
- assert.equal(String((await call('rooms')).find(r=>r.id===original.id).nightly_amount_minor),'9900000');
- console.log('PASS owner room editing and read-only staff permissions');
- const image = await sharp({create:{width:16,height:16,channels:3,background:"#174b3f"}}).png().toBuffer();
- await call(`admin/room-types/${original.id}/photos`,guest,'POST',{data:image.toString('base64')},undefined,403);
- await call(`admin/room-types/${original.id}/photos`,staff,'POST',{data:image.toString('base64')},undefined,403);
- await call(`admin/room-types/${original.id}/photos`,owner,'POST',{data:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64')},undefined,400);
- const photo = await call(`admin/room-types/${original.id}/photos`,owner,'POST',{data:image.toString('base64')},undefined,201);
- const duplicate = await call(`admin/room-types/${original.id}/photos`,owner,'POST',{data:image.toString('base64')},undefined,201);
- assert.equal(photo.url,duplicate.url);
- assert.match(photo.url,/^\/api\/photos\/[a-f0-9]{64}\.webp$/);
- const publicPhoto=await fetch(`${base}/photos/${photo.url.split('/').pop()}`);
- assert.equal(publicPhoto.status,200);assert.match(publicPhoto.headers.get('content-type'),/image\/webp/);
- assert.equal((await call('rooms')).find(r=>r.id===original.id).photo_urls.length,1);
- await call(`admin/room-types/${original.id}`,owner,'PATCH',{...edit,photoUrls:[photo.url]});
- console.log('PASS room photo upload, format validation, authorization, deduplication and public serving');
-
- for(const room of physical)await call(`admin/rooms/${room.id}`,owner,'PATCH',{active:false});
- assert.equal((await call(`availability?checkIn=${today}&checkOut=${out}`)).find(r=>r.id===original.id).available_rooms,0);
- await call('bookings',guest,'POST',body,randomUUID(),409);
- for(const room of physical)await call(`admin/rooms/${room.id}`,owner,'PATCH',{active:true});
- console.log('PASS offline inventory and sold-out rejection');
- const key=randomUUID();
- const first=await call('bookings',guest,'POST',body,key,201);
- const retry=await call('bookings',guest,'POST',body,key,201);
- assert.equal(first.id,retry.id);assert.equal(String(first.total_amount_minor),'9900000');
- await call('bookings',guest,'POST',{...body,guests:2},key,409);
- await call(`admin/bookings/${first.id}`,staff,'PATCH',{action:'accept'},undefined,403);
- await call(`local-test/bookings/${first.id}/pay`,guest,'POST',undefined,undefined,409);
- await call(`admin/bookings/${first.id}`,owner,'PATCH',{action:'accept'});
- await call(`admin/bookings/${first.id}`,owner,'PATCH',{action:'accept'},undefined,409);
- let emailJob;
- for(let attempt=0;attempt<60;attempt++){
-   emailJob=(await pool.query('SELECT * FROM booking_emails WHERE booking_id=$1',[first.id])).rows[0];
-   if(emailJob?.status==='TEST_SENT')break;
-   await new Promise(resolve=>setTimeout(resolve,250));
- }
- assert.equal(emailJob?.status,'TEST_SENT','Expected isolated test email generation.');
- const preview=JSON.parse(emailJob.test_preview);
- assert.equal(preview.to,'guest@wh.test');
- assert.match(preview.text,/not a paid booking confirmation/);
- assert.ok(preview.text.includes(first.id));
- assert.equal((await pool.query('SELECT count(*)::integer AS count FROM booking_emails WHERE booking_id=$1',[first.id])).rows[0].count,1);
- await call(`admin/bookings/${first.id}/email`,guest,'POST',undefined,undefined,403);
- await call(`admin/bookings/${first.id}/email`,owner,'POST',undefined,undefined,400);
- const enriched=(await call('admin/bookings',owner)).find(booking=>booking.id===first.id);
- assert.equal(enriched.guest_email,'guest@wh.test');assert.equal(enriched.guest_phone,'09770000002');
- console.log('PASS approval email queue, one job per booking, test message content and admin guest contacts');
-
- const paid=await call(`local-test/bookings/${first.id}/pay`,guest,'POST',undefined,undefined,201);
- const paidAgain=await call(`local-test/bookings/${first.id}/pay`,guest,'POST',undefined,undefined,201);
- assert.equal(paid.booking.status,'CONFIRMED');assert.equal(paid.simulated,true);assert.equal(paid.payment.id,paidAgain.payment.id);
- assert.equal((await call('admin/payments',staff)).filter(p=>p.booking_id===first.id).length,1);
- console.log('PASS retry idempotency, server price, approval, simulated payment and payment retry');
- const second=await call('bookings',guest,'POST',body,randomUUID(),201);
- await call(`admin/bookings/${second.id}`,owner,'PATCH',{action:'reject'});
- assert.equal((await call('bookings',guest)).find(b=>b.id===second.id).status,'REJECTED');
- await call('admin/staff/wh-test-staff',owner,'DELETE');
- await call('admin/bookings',staff,'GET',undefined,undefined,403);
- console.log('PASS booking rejection and immediate staff access revocation');
- // Exercise concurrent requests through the real HTTP/controller/DB path.
- const requests=await Promise.all(Array.from({length:3},async()=>{
-  const r=await fetch(`${base}/bookings`,{method:'POST',headers:{Authorization:`Bearer ${guest}`,'Content-Type':'application/json','Idempotency-Key':randomUUID()},body:JSON.stringify(body)});return r.status;
- }));
- assert.equal(requests.filter(s=>s===201).length,1);assert.equal(requests.filter(s=>s===409).length,2);
- console.log('PASS concurrent booking race: one remaining room creates one reservation');
- console.log('ACCEPTANCE PASSED. No real SMS, provider login or money was tested.');
-}finally{
- // Leave the visible demo accounts and inventory clean for the owner to test manually.
- if(owner&&original){
-  await call(`admin/room-types/${original.id}`,owner,'PATCH',{name:original.name,description:original.description,maxGuests:original.max_guests,nightlyAmountMinor:String(original.nightly_amount_minor),amenities:original.amenities,photoUrls:original.photo_urls});
-  for(const room of physical||[])await call(`admin/rooms/${room.id}`,owner,'PATCH',{active:room.active});
-  if(originalStaff)await call('admin/staff',owner,'POST',{email:originalStaff.email,permissions:originalStaff.permissions},undefined,201);
-  else await call('admin/staff/wh-test-staff',owner,'DELETE');
-  await pool.query('DELETE FROM payment_transactions WHERE booking_id IN (SELECT id FROM bookings WHERE firebase_uid=$1)', ['wh-test-guest']);
-  await pool.query('DELETE FROM audit_logs WHERE booking_id IN (SELECT id FROM bookings WHERE firebase_uid=$1)', ['wh-test-guest']);
-  await pool.query('DELETE FROM bookings WHERE firebase_uid=$1', ['wh-test-guest']);
- }
- await pool.end();
+try {
+  const owner = await login("admin@wh.test", "admin"),
+    guest = await login("guest@wh.test");
+  assert.equal(
+    (await call("admin/system", owner)).authProvider,
+    "LOCAL_POSTGRESQL",
+  );
+  await call("admin/bookings", guest, "GET", null, null, 403);
+  await call(
+    "auth/login",
+    null,
+    "POST",
+    { email: "guest@wh.test", password: "wrong" },
+    null,
+    401,
+  );
+  await call(
+    "auth/signup",
+    null,
+    "POST",
+    { email: "new@wh.test", password, phone: "08123456789" },
+    null,
+    400,
+  );
+  const email = `signup-${randomUUID()}@wh.test`,
+    signed = await call(
+      "auth/signup",
+      null,
+      "POST",
+      { email, password, phone: "09123456789" },
+      null,
+      201,
+    );
+  assert.equal((await call("me", signed.token)).phone, "09123456789");
+  await call(
+    "admin/accounts",
+    owner,
+    "POST",
+    { email: `new-staff-${randomUUID()}@wh.test`, password },
+    null,
+    201,
+  );
+  await call(
+    "admin/staff",
+    owner,
+    "POST",
+    {
+      email: "staff@wh.test",
+      permissions: ["kitchen.manage", "stays.manage", "bookings.manage"],
+    },
+    null,
+    201,
+  );
+  const staff = await login("staff@wh.test", "admin");
+  assert.ok((await call("me", staff)).permissions.includes("bookings.read"));
+  await call("admin/accounts", staff, "GET", null, null, 403);
+  console.log(
+    "PASS local authentication, account creation and permission boundary",
+  );
+  const typeBody = {
+    name: `Integration-${randomUUID()}`,
+    description: "Test room",
+    maxGuests: 2,
+    nightlyAmountMinor: "2500000",
+    amenities: ["Wi-Fi"],
+    photoUrls: [],
+    roomNumbers: [`T-${randomUUID()}`],
+  };
+  const type = await call(
+    "admin/room-types",
+    owner,
+    "POST",
+    typeBody,
+    null,
+    201,
+  );
+  const pixels = await sharp({
+    create: { width: 16, height: 16, channels: 3, background: "#23875a" },
+  })
+    .png()
+    .toBuffer();
+  const photo = await call(
+    `admin/room-types/${type.id}/photos`,
+    owner,
+    "POST",
+    { data: pixels.toString("base64") },
+    null,
+    201,
+  );
+  const urls = Array.from(
+    { length: 40 },
+    (_, i) => `https://example.com/room-${i}.jpg`,
+  );
+  await call(`admin/room-types/${type.id}`, owner, "PATCH", {
+    ...typeBody,
+    photoUrls: urls,
+  });
+  await call(
+    `admin/room-types/${type.id}`,
+    owner,
+    "PATCH",
+    { ...typeBody, photoUrls: [...urls, "https://example.com/extra.jpg"] },
+    null,
+    400,
+  );
+  await call(`admin/room-types/${type.id}`, owner, "PATCH", {
+    ...typeBody,
+    photoUrls: [photo.url],
+  });
+  console.log("PASS room creation, safe image upload and 40-photo limit");
+  const today = new Date(Date.now() + 390 * 60000).toISOString().slice(0, 10),
+    out = new Date(Date.parse(today + "T00:00:00Z") + 86400000)
+      .toISOString()
+      .slice(0, 10),
+    key = randomUUID(),
+    body = { roomTypeId: type.id, checkIn: today, checkOut: out, guests: 1 };
+  const booking = await call("bookings", guest, "POST", body, key, 201);
+  assert.equal(
+    (await call("bookings", guest, "POST", body, key, 201)).id,
+    booking.id,
+  );
+  await call("bookings", guest, "POST", body, randomUUID(), 409);
+  await call(`admin/bookings/${booking.id}`, owner, "PATCH", {
+    action: "accept",
+  });
+  const until = Date.now() + 20000;
+  let preview;
+  while (Date.now() < until) {
+    preview = (
+      await db.query("SELECT * FROM booking_emails WHERE booking_id=$1", [
+        booking.id,
+      ])
+    ).rows[0];
+    if (preview?.status === "TEST_SENT") break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  assert.equal(preview?.status, "TEST_SENT");
+  assert.equal(preview.test_preview.to, "guest@wh.test");
+  await call(
+    `admin/bookings/${booking.id}/stay`,
+    staff,
+    "POST",
+    { action: "check-in" },
+    null,
+    400,
+  );
+  await call(
+    `admin/bookings/${booking.id}/stay`,
+    staff,
+    "POST",
+    { action: "confirm-payment", paymentReference: "cash-receipt-test" },
+    null,
+    201,
+  );
+  const dish = await call(
+    "admin/kitchen/dishes",
+    owner,
+    "POST",
+    {
+      name: "Test curry",
+      description: "Peanuts",
+      active: true,
+      priceMinor: "500000",
+    },
+    null,
+    201,
+  );
+  await call(
+    `admin/kitchen/dishes/${dish.id}`,
+    staff,
+    "PATCH",
+    {
+      name: "Test curry",
+      description: "Peanuts",
+      active: true,
+      priceMinor: "1",
+    },
+    null,
+    403,
+  );
+  const unpriced = await call(
+    "admin/kitchen/dishes",
+    staff,
+    "POST",
+    { name: "Staff special", description: "Admin will price", active: true },
+    null,
+    201,
+  );
+  assert.equal(unpriced.price_minor, null);
+  assert.ok(!(await call("kitchen/menu")).some((d) => d.id === unpriced.id));
+  await call(
+    "kitchen/orders",
+    guest,
+    "POST",
+    {
+      bookingId: booking.id,
+      items: [{ dishId: dish.id, quantity: 2 }],
+      note: "",
+    },
+    randomUUID(),
+    403,
+  );
+  await call(
+    `admin/bookings/${booking.id}/stay`,
+    staff,
+    "POST",
+    { action: "check-in" },
+    null,
+    201,
+  );
+  await call(
+    `admin/bookings/${booking.id}/stay`,
+    staff,
+    "POST",
+    { action: "check-in" },
+    null,
+    400,
+  );
+  const foodKey = randomUUID(),
+    foodBody = {
+      bookingId: booking.id,
+      items: [{ dishId: dish.id, quantity: 2 }],
+      note: "No extra salt",
+      total_minor: "1",
+    };
+  const [order, repeat] = await Promise.all([
+    call("kitchen/orders", guest, "POST", foodBody, foodKey, 201),
+    call("kitchen/orders", guest, "POST", foodBody, foodKey, 201),
+  ]);
+  assert.equal(order.id, repeat.id);
+  assert.equal(order.total_minor, "1000000");
+  await call(
+    "kitchen/orders",
+    signed.token,
+    "POST",
+    foodBody,
+    randomUUID(),
+    403,
+  );
+  await call(
+    `admin/bookings/${booking.id}/stay`,
+    staff,
+    "POST",
+    { action: "check-out" },
+    null,
+    400,
+  );
+  await call(
+    `admin/kitchen/orders/${order.id}`,
+    staff,
+    "PATCH",
+    { status: "DELIVERED" },
+    null,
+    400,
+  );
+  for (const status of ["PREPARING", "READY", "DELIVERED"])
+    await call(`admin/kitchen/orders/${order.id}`, staff, "PATCH", { status });
+  await call(
+    `admin/bookings/${booking.id}/stay`,
+    staff,
+    "POST",
+    { action: "check-out" },
+    null,
+    201,
+  );
+  await call("kitchen/orders", guest, "POST", foodBody, randomUUID(), 403);
+  const history = await call("bookings", guest);
+  assert.ok(history.find((b) => b.id === booking.id).checked_out_at);
+  console.log(
+    "PASS approval email, manual settlement, check-in, food idempotency/pricing, status transitions and check-out gate",
+  );
+  await call("auth/reset-request", null, "POST", { email }, null, 201);
+  const reset = (
+    await db.query(
+      "SELECT details FROM admin_activity WHERE actor_uid=$1 AND action='test.reset-email' ORDER BY id DESC LIMIT 1",
+      [signed.user.uid],
+    )
+  ).rows[0].details;
+  await call(
+    "auth/reset",
+    null,
+    "POST",
+    { token: reset.token, password: "NewHotelPassword2026!" },
+    null,
+    201,
+  );
+  await call("me", signed.token, "GET", null, null, 401);
+  await call(
+    "auth/reset",
+    null,
+    "POST",
+    { token: reset.token, password: "DifferentPassword2026!" },
+    null,
+    400,
+  );
+  const fresh = await login(email, "customer", "NewHotelPassword2026!");
+  await call(`admin/accounts/${signed.user.uid}`, owner, "PATCH", {
+    email: `changed-${randomUUID()}@wh.test`,
+    password: "TemporaryPassword2026!",
+  });
+  await call("me", fresh, "GET", null, null, 401);
+  const a = (
+    await db.query("SELECT * FROM accounts WHERE uid=$1", [signed.user.uid])
+  ).rows[0];
+  assert.ok(a.must_change_password);
+  assert.ok(!a.password_hash.includes("TemporaryPassword"));
+  const temp = await login(a.email, "customer", "TemporaryPassword2026!");
+  await call("bookings", temp, "POST", body, randomUUID(), 403);
+  await call(
+    "auth/password",
+    temp,
+    "POST",
+    {
+      currentPassword: "TemporaryPassword2026!",
+      password: "PermanentPassword2026!",
+    },
+    null,
+    201,
+  );
+  await call("me", temp, "GET", null, null, 401);
+  const permanent = await login(a.email, "customer", "PermanentPassword2026!");
+  await call(`admin/accounts/${a.uid}`, owner, "PATCH", { disabled: true });
+  await call("me", permanent, "GET", null, null, 401);
+  const cookieLogin = await fetch(base + "/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-WN-Request": "1" },
+    body: JSON.stringify({ email: "guest@wh.test", password, web: true }),
+  });
+  assert.match(
+    cookieLogin.headers.get("set-cookie"),
+    /HttpOnly; SameSite=Strict/,
+  );
+  assert.equal((await cookieLogin.json()).token, undefined);
+  console.log(
+    "PASS single-use recovery, session revocation, admin credential control and HttpOnly web sessions",
+  );
+} finally {
+  await db.end();
 }

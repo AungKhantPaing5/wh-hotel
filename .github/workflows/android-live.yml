@@ -1,4 +1,4 @@
-name: WN Android Live Firebase
+name: WN Android Local Accounts
 on:
   workflow_dispatch:
   push:
@@ -19,69 +19,27 @@ jobs:
     env:
       CI: '1'
       EXPO_NO_TELEMETRY: '1'
-      WH_FIREBASE_NATIVE: 'true'
-      EXPO_PUBLIC_AUTH_ENABLED: 'true'
       EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL || 'https://thai1.payapi.uk/api' }}
-      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: ${{ vars.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
-      EXPO_PUBLIC_APPLE_SERVICE_ID: ${{ vars.EXPO_PUBLIC_APPLE_SERVICE_ID }}
-      EXPO_PUBLIC_APPLE_REDIRECT_URI: ${{ vars.EXPO_PUBLIC_APPLE_REDIRECT_URI }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check Firebase Android client configuration
-        id: firebase
-        env:
-          FIREBASE_ANDROID: ${{ secrets.EXPO_ANDROID_GOOGLE_SERVICES_JSON }}
-        run: |
-          node --input-type=module <<'JS'
-          import fs from 'node:fs';
-          const raw=process.env.FIREBASE_ANDROID || (fs.existsSync('firebase/android-client.json') ? fs.readFileSync('firebase/android-client.json','utf8') : '');
-          if(!raw){
-            fs.appendFileSync(process.env.GITHUB_OUTPUT,'configured=false\n');
-            console.log('::warning::Add the Firebase Android client google-services.json as EXPO_ANDROID_GOOGLE_SERVICES_JSON. Live authentication APK was not built.');
-            process.exit(0);
-          }
-          const config=JSON.parse(raw);
-          if(config.private_key||config.type==='service_account')throw new Error('Use Android client config; never upload Firebase Admin credentials.');
-          const client=config.client?.find(client=>client.client_info?.android_client_info?.package_name==='com.wnhotel.wh_mobile');
-          if(!client)throw new Error('Register the Android package com.wnhotel.wh_mobile in your Firebase project first.');
-          fs.writeFileSync('google-services.json',raw);
-          if(!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID){
-            const oauth=client.oauth_client?.find(client=>client.client_type===3);
-            if(oauth?.client_id)fs.appendFileSync(process.env.GITHUB_ENV,`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=${oauth.client_id}\n`);
-          }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'configured=true\n');
-          JS
       - uses: actions/setup-node@v4
-        if: steps.firebase.outputs.configured == 'true'
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
       - uses: actions/setup-java@v4
-        if: steps.firebase.outputs.configured == 'true'
         with:
           distribution: temurin
           java-version: '17'
-      - if: steps.firebase.outputs.configured == 'true'
-        run: npm ci
-      - if: steps.firebase.outputs.configured == 'true'
-        run: npm run typecheck && npm test
-      - if: steps.firebase.outputs.configured == 'true'
-        run: npx expo prebuild --platform android --clean
-      - name: Print test signing fingerprints for Firebase Google Sign-In registration
-        if: steps.firebase.outputs.configured == 'true'
-        working-directory: apps/mobile/android
-        run: ./gradlew signingReport --no-daemon > ../signing-fingerprints.txt
-      - name: Build standalone Android APK (test signing, live API)
-        if: steps.firebase.outputs.configured == 'true'
+      - run: npm ci
+      - run: npm run typecheck && npm test
+      - run: npx expo prebuild --platform android --clean
+      - name: Build standalone Android APK (test signing)
         working-directory: apps/mobile/android
         run: ./gradlew assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx3072m -XX:MaxMetaspaceSize=1536m -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8"
       - uses: actions/upload-artifact@v4
-        if: steps.firebase.outputs.configured == 'true'
         with:
-          name: WN-Android-Live-Firebase-APK
-          path: |
-            apps/mobile/android/app/build/outputs/apk/release/*.apk
-            apps/mobile/signing-fingerprints.txt
+          name: WN-Android-v0.5-Local-Accounts-APK
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
