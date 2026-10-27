@@ -22,9 +22,11 @@ The migration is additive. Booking, room, payment, photo and staff records remai
 cd /opt/wh-hotel
 mkdir -p backups
 chmod 700 backups
-umask 077
-docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "backups/before-local-auth-$(date +%Y%m%d-%H%M%S).sql"
-docker compose exec -T api tar -C /app/uploads -czf - . > "backups/photos-$(date +%Y%m%d-%H%M%S).tar.gz"
+(
+  umask 077
+  docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "backups/before-local-auth-$(date +%Y%m%d-%H%M%S).sql"
+  docker compose exec -T api tar -C /app/uploads -czf - . > "backups/photos-$(date +%Y%m%d-%H%M%S).tar.gz"
+)
 ```
 
 2. Pull and rebuild. Keep the existing `POSTGRES_PASSWORD` and Docker volumes.
