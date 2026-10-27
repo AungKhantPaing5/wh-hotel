@@ -171,7 +171,7 @@ try {
     await new Promise((r) => setTimeout(r, 200));
   }
   assert.equal(preview?.status, "TEST_SENT");
-  assert.equal(preview.test_preview.to, "guest@wh.test");
+  assert.equal(JSON.parse(preview.test_preview).to, "guest@wh.test");
   await call(
     `admin/bookings/${booking.id}/stay`,
     staff,

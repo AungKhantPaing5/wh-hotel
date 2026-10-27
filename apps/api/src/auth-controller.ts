@@ -93,10 +93,16 @@ export class AuthController {
     }
     return this.session(a, "customer", b.web === true, res);
   }
-  async session(a: any, scope: string, web: boolean, res: Response) {
+  async session(
+    a: any,
+    scope: string,
+    web: boolean,
+    res: Response,
+    query: any = db,
+  ) {
     const token = randomToken(),
       seconds = scope === "admin" ? 28800 : 604800;
-    await db.query(
+    await query.query(
       "INSERT INTO account_sessions(token_hash,account_uid,scope,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))",
       [digest(token), a.uid, scope, seconds],
     );
@@ -111,24 +117,40 @@ export class AuthController {
     const email = emailAddress(b.email);
     await rateLimit("login:" + email, 15);
     await rateLimit("login-ip:" + req.ip, 100);
-    const a = (await db.query("SELECT * FROM accounts WHERE email=$1", [email]))
-      .rows[0];
-    const okay = await checkPassword(b.password, a?.password_hash || null);
-    if (!okay || a?.disabled)
-      throw new HttpException("Email or password is incorrect.", 401);
-    const scope = scopeOf(b.scope);
-    if (
-      scope === "admin" &&
-      !a.is_owner &&
-      !(
-        await db.query(
-          "SELECT 1 FROM staff_permissions WHERE firebase_uid=$1 AND cardinality(permissions)>0",
-          [a.uid],
-        )
-      ).rowCount
-    )
-      throw new ForbiddenException("This account does not have staff access.");
-    return this.session(a, scope, b.web === true, res);
+    const c = await db.connect();
+    try {
+      await c.query("BEGIN");
+      const a = (
+        await c.query("SELECT * FROM accounts WHERE email=$1 FOR UPDATE", [
+          email,
+        ])
+      ).rows[0];
+      const okay = await checkPassword(b.password, a?.password_hash || null);
+      if (!okay || a?.disabled)
+        throw new HttpException("Email or password is incorrect.", 401);
+      const scope = scopeOf(b.scope);
+      if (
+        scope === "admin" &&
+        !a.is_owner &&
+        !(
+          await c.query(
+            "SELECT 1 FROM staff_permissions WHERE firebase_uid=$1 AND cardinality(permissions)>0",
+            [a.uid],
+          )
+        ).rowCount
+      )
+        throw new ForbiddenException(
+          "This account does not have staff access.",
+        );
+      const result = await this.session(a, scope, b.web === true, res, c);
+      await c.query("COMMIT");
+      return result;
+    } catch (e) {
+      await c.query("ROLLBACK");
+      throw e;
+    } finally {
+      c.release();
+    }
   }
   @Get("auth/session") async sessionInfo(@Headers("authorization") h: string) {
     return { user: safe(await user(h)) };
@@ -150,22 +172,29 @@ export class AuthController {
     @Body() b: any,
   ) {
     const u = await user(h),
-      a = (await db.query("SELECT * FROM accounts WHERE uid=$1", [u.uid]))
-        .rows[0];
-    if (!(await checkPassword(b.currentPassword, a.password_hash)))
-      throw new BadRequestException("Current password is incorrect.");
-    return this.replacePassword(u.uid, await hashPassword(b.password));
-  }
-  async replacePassword(uid: string, hash: string) {
-    const c = await db.connect();
+      hash = await hashPassword(b.password),
+      c = await db.connect();
     try {
       await c.query("BEGIN");
+      const a = (
+        await c.query("SELECT * FROM accounts WHERE uid=$1 FOR UPDATE", [u.uid])
+      ).rows[0];
+      if (
+        !a ||
+        a.disabled ||
+        !(await checkPassword(b.currentPassword, a.password_hash))
+      )
+        throw new BadRequestException("Current password is incorrect.");
       await c.query(
         "UPDATE accounts SET password_hash=$2,must_change_password=false WHERE uid=$1",
-        [uid, hash],
+        [u.uid, hash],
       );
-      await c.query("DELETE FROM account_sessions WHERE account_uid=$1", [uid]);
-      await c.query("DELETE FROM password_resets WHERE account_uid=$1", [uid]);
+      await c.query("DELETE FROM account_sessions WHERE account_uid=$1", [
+        u.uid,
+      ]);
+      await c.query("DELETE FROM password_resets WHERE account_uid=$1", [
+        u.uid,
+      ]);
       await c.query("COMMIT");
       return {
         status: "password_changed",

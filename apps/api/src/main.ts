@@ -42,7 +42,7 @@ import { emailConfigured, startEmailWorker } from "./booking-email";
 const photoDirectory = resolve(process.env.PHOTO_DIRECTORY || "/app/uploads");
 const managedPhoto = (url: unknown): url is string =>
   typeof url === "string" && /^\/api\/photos\/[a-f0-9]{64}\.webp$/.test(url);
-// Contact details are self-reported; never mark these numbers as Firebase-verified.
+// Contact details are self-reported; never mark these numbers as OTP-verified.
 async function contactPhone(
   uid: string,
   verifiedPhone?: string,

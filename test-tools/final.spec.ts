@@ -19,6 +19,10 @@ test("admin login, customer control and kitchen price forms", async ({
   await expect(
     page.getByRole("heading", { name: "Customer & staff accounts" }),
   ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/admin-customers.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Kitchen", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Kitchen", exact: true }),
@@ -26,6 +30,10 @@ test("admin login, customer control and kitchen price forms", async ({
   await expect(
     page.getByLabel("Price in minor units (5,000 MMK = 500000)").first(),
   ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/admin-kitchen.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Staff", exact: true }).click();
   await expect(page.getByText("kitchen.manage", { exact: true })).toBeVisible();
   await expect(page.getByText("stays.manage", { exact: true })).toBeVisible();
@@ -60,6 +68,10 @@ for (const mobile of [false, true])
     await expect(
       page.getByRole("button", { name: "Place room-service order" }),
     ).toHaveCount(0);
+    await page.screenshot({
+      path: `test-results/customer-${mobile ? "mobile" : "desktop"}.png`,
+      fullPage: true,
+    });
     await page.goto("/admin");
     await expect(page.getByLabel("Admin password")).toBeVisible();
     await expect(

@@ -1053,7 +1053,7 @@ export default function Home() {
                         minLength={authView === "signup" ? 12 : undefined}
                         placeholder={
                           authView === "signup"
-                            ? "At least 6 characters"
+                            ? "At least 12 characters"
                             : "Enter your password"
                         }
                         value={password}
