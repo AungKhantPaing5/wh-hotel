@@ -19,8 +19,8 @@ export function emailAddress(value: unknown): string {
   return value.trim().toLowerCase();
 }
 export function passwordValue(value: unknown): string {
-  if (typeof value !== "string" || value.length < 12 || value.length > 128)
-    throw new BadRequestException("Use a password with 12–128 characters.");
+  if (typeof value !== "string" || value.length < 6 || value.length > 128)
+    throw new BadRequestException("Use a password with 6–128 characters.");
   return value;
 }
 function derive(password: string, salt: string) {

@@ -70,7 +70,7 @@ export function ChangePassword({
           New password
           <input
             required
-            minLength={12}
+            minLength={6}
             maxLength={128}
             type="password"
             value={password}
@@ -148,7 +148,7 @@ export function AccountsPanel({ api }: { api: Api }) {
           <input
             name="password"
             type="password"
-            minLength={12}
+            minLength={6}
             maxLength={128}
             required
             autoComplete="new-password"
@@ -180,7 +180,7 @@ export function AccountsPanel({ api }: { api: Api }) {
                 <input
                   name="password"
                   type="password"
-                  minLength={12}
+                  minLength={6}
                   maxLength={128}
                   autoComplete="new-password"
                   placeholder="Leave blank to keep password"

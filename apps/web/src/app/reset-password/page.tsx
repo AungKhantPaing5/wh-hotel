@@ -64,7 +64,7 @@ export default function Reset() {
           <input
             type="password"
             required
-            minLength={12}
+            minLength={6}
             maxLength={128}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -76,7 +76,7 @@ export default function Reset() {
           <input
             type="password"
             required
-            minLength={12}
+            minLength={6}
             value={repeat}
             onChange={(e) => setRepeat(e.target.value)}
           />

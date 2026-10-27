@@ -882,7 +882,7 @@ function Main() {
                         onChangeText={setCurrentPassword}
                       />
                       <Field
-                        label="New password (12+ characters)"
+                        label="New password (6+ characters)"
                         secure
                         value={newPassword}
                         onChangeText={setNewPassword}
@@ -1015,11 +1015,11 @@ function Main() {
                             }
                             if (
                               accountMode === "signup" &&
-                              (password.length < 12 ||
+                              (password.length < 6 ||
                                 password !== confirmPassword)
                             )
                               throw new Error(
-                                "Use at least 12 characters and matching passwords.",
+                                "Use at least 6 characters and matching passwords.",
                               );
                             await auth!.email(
                               email.trim(),
@@ -1059,7 +1059,7 @@ function Main() {
                             onChangeText={setRecoveryCode}
                           />
                           <Field
-                            label="New password (12+ characters)"
+                            label="New password (6+ characters)"
                             value={newPassword}
                             onChangeText={setNewPassword}
                             secure

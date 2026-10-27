@@ -42,7 +42,7 @@ docker compose up -d --build
 docker compose up -d --force-recreate api
 ```
 
-4. Create the hotel owner account interactively. The password is hidden and must be 12–128 characters:
+4. Create the hotel owner account interactively. The password is hidden and must be 6–128 characters:
 
 ```bash
 docker compose exec api node apps/api/scripts/manage-owner.mjs

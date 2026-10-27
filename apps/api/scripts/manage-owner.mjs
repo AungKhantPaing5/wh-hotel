@@ -39,12 +39,12 @@ async function hidden(prompt) {
   });
 }
 const password = await hidden(
-    "New owner password (hidden, 12–128 characters): ",
+    "New owner password (hidden, 6–128 characters): ",
   ),
   repeat = await hidden("Repeat password (hidden): ");
 stdin.pause();
-if (password !== repeat || password.length < 12 || password.length > 128)
-  throw Error("Passwords must match and have 12–128 characters.");
+if (password !== repeat || password.length < 6 || password.length > 128)
+  throw Error("Passwords must match and have 6–128 characters.");
 const salt = randomBytes(16).toString("hex"),
   hash = `scrypt$${salt}$${scryptSync(password, salt, 64, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("hex")}`,
   pool = new Pool({ connectionString: process.env.DATABASE_URL }),

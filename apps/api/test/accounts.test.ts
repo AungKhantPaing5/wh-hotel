@@ -102,3 +102,5 @@ test(
     }
   },
 );
+
+ test('password policy accepts six characters and rejects five',async()=>{assert.equal(passwordValue('123456'),'123456');assert.throws(()=>passwordValue('12345'));const hash=await hashPassword('123456');assert.equal(await checkPassword('123456',hash),true);});
